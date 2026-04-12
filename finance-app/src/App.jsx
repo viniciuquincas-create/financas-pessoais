@@ -630,7 +630,7 @@ function CartoesView({month,setMonth}) {
   };
 
   const processPdf=async()=>{
-    if(!pdfFile) return;
+    if(!pdfFile){ pdfInputRef.current?.click(); return; }
     setPdfProcessing(true); setPdfMsg("Lendo o PDF...");
     try{
       const base64=await new Promise((res,rej)=>{
@@ -750,7 +750,7 @@ Retorne SOMENTE o array JSON.`;
           </div>
 
           {/* File drop area */}
-          <div onClick={()=>pdfInputRef.current?.click()} style={{
+          <div onClick={()=>{if(!pdfFile)pdfInputRef.current?.click();}} style={{
             border:`2px dashed ${card.color}44`,borderRadius:12,padding:"20px",
             textAlign:"center",cursor:"pointer",background:`${card.color}08`,
             transition:"all .2s",
@@ -795,7 +795,7 @@ Retorne SOMENTE o array JSON.`;
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
             <button onClick={()=>{setShowPdfUpload(false);setPdfFile(null);setPdfPreview([]);}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"#555",fontSize:13,cursor:"pointer"}}>Cancelar</button>
-            <button onClick={pdfPreview.length>0?confirmPdfImport:processPdf} disabled={!pdfFile||pdfProcessing}
+            <button onClick={pdfPreview.length>0?confirmPdfImport:(!pdfFile?(()=>pdfInputRef.current?.click()):processPdf)} disabled={pdfProcessing}
               style={{padding:"10px",borderRadius:10,border:"none",background:!pdfFile||pdfProcessing?"#1a1a2a":card.color,color:!pdfFile||pdfProcessing?"#333":"#fff",fontSize:13,fontWeight:600,cursor:!pdfFile||pdfProcessing?"not-allowed":"pointer"}}>
               {pdfProcessing?"Processando...":pdfPreview.length>0?"✅ Confirmar":"🤖 Processar"}
             </button>
@@ -910,7 +910,7 @@ function PixView({month,setMonth}) {
   };
 
   const processPdf=async()=>{
-    if(!pdfFile) return;
+    if(!pdfFile){ pdfInputRef.current?.click(); return; }
     setPdfProcessing(true); setPdfMsg("Lendo o PDF...");
     try{
       const base64=await new Promise((res,rej)=>{
