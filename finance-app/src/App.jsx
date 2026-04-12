@@ -708,7 +708,7 @@ Retorne SOMENTE o array JSON.`;
         {CARDS.map(c=>{
           const sub=(month.cartoes[c.id]||[]).reduce((s,t)=>s+Number(t.valor||0),0);
           return (
-            <button key={c.id} onClick={()=>setActiveCard(c.id)} style={{flex:1,padding:"10px 4px",borderRadius:12,cursor:"pointer",border:`2px solid ${activeCard===c.id?c.color:"transparent"}`,background:activeCard===c.id?`${c.color}18`:"rgba(255,255,255,.03)"}}>
+            <button key={c.id} onClick={()=>{setActiveCard(c.id);setImportMsg(null);setShowPdfUpload(false);setShowImport(false);setPdfFile(null);setPdfPreview([]);}} style={{flex:1,padding:"10px 4px",borderRadius:12,cursor:"pointer",border:`2px solid ${activeCard===c.id?c.color:"transparent"}`,background:activeCard===c.id?`${c.color}18`:"rgba(255,255,255,.03)"}}>
               <div style={{fontSize:20}}>{c.emoji}</div>
               <div style={{fontSize:10,color:activeCard===c.id?c.color:"#444",fontWeight:600,marginTop:2}}>{c.label.split(" ")[0]}</div>
               <div className="mono" style={{fontSize:11,color:activeCard===c.id?c.color:"#333",marginTop:1}}>{fmtBRL(sub)}</div>
@@ -724,7 +724,7 @@ Retorne SOMENTE o array JSON.`;
       </Card>
       {/* Import buttons */}
       <div style={{display:"flex",gap:8}}>
-        <button onClick={()=>{setShowPdfUpload(!showPdfUpload);setShowImport(false);setImportMsg(null);}} style={{flex:1,padding:"9px",borderRadius:10,border:`1px solid ${card.color}44`,background:showPdfUpload?`${card.color}18`:"transparent",color:card.color,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+        <button onClick={()=>{setShowPdfUpload(!showPdfUpload);setShowImport(false);setImportMsg(null);setPdfFile(null);setPdfPreview([]);setPdfProcessing(false);}} style={{flex:1,padding:"9px",borderRadius:10,border:`1px solid ${card.color}44`,background:showPdfUpload?`${card.color}18`:"transparent",color:card.color,fontSize:12,fontWeight:600,cursor:"pointer"}}>
           📄 Importar PDF
         </button>
         <button onClick={()=>{setShowImport(!showImport);setShowPdfUpload(false);setImportMsg(null);}} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(255,255,255,.1)",background:showImport?"rgba(255,255,255,.06)":"transparent",color:"#888",fontSize:12,fontWeight:600,cursor:"pointer"}}>
