@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const CATS = ["Mercado","Comer fora","Delivery","Carro","Uber","Farmácia","Empresa","Casa","Apps","Lazer","Compras","Pet","Família/Presentes","Impostos","Educação","Viagem"];
 const CARDS = [
@@ -588,13 +588,98 @@ function CartoesView({month,setMonth}) {
   const [activeCard,setActiveCard]=useState("inter");
   const [showForm,setShowForm]=useState(false);
   const [showImport,setShowImport]=useState(false);
+  const [showPdfUpload,setShowPdfUpload]=useState(false);
   const [importJson,setImportJson]=useState("");
   const [importMsg,setImportMsg]=useState(null);
+  const [pdfFile,setPdfFile]=useState(null);
+  const [pdfProcessing,setPdfProcessing]=useState(false);
+  const [pdfMsg,setPdfMsg]=useState("");
+  const [pdfPreview,setPdfPreview]=useState([]);
+  const pdfInputRef=useRef();
   const [form,setForm]=useState({desc:"",cat:CATS[0],parcela:"",valor:""});
   const card=CARDS.find(c=>c.id===activeCard);
   const items=month.cartoes[activeCard]||[];
   const total=items.reduce((s,t)=>s+Number(t.valor||0),0);
   const totalAll=Object.values(month.cartoes).flat().reduce((s,t)=>s+Number(t.valor||0),0);
+  const onPdfSelect=e=>{
+    const f=e.target.files?.[0];
+    if(f&&f.type==="application/pdf"){setPdfFile(f);setPdfPreview([]);}
+  };
+
+  const RULES_CAT = [
+    [["market4u","carrefour","assai","padaria","panificadora","piriquito","hortifruti","atacadao","pao de acucar","supermercado","minuto pa"],"Mercado"],
+    [["sampa cafe","oxxo","hamburger","osnir","mani ","cantina","churrascaria","restaurante","lanchonete","pizza","delta quality","cafe ","lanche"],"Comer fora"],
+    [["ifd*","ifood","rappi","zee now","delivery"],"Delivery"],
+    [["paypal *uber","uber br","uber do brasi","uber ","99app"],"Uber"],
+    [["sem parar","estacionamento","blz estacion","posto ","auto posto","shellbox","intertag","combustivel"],"Carro"],
+    [["applecombill","netflix","amazon kindle","google one","youtube","disney","mubi","openai","timeleft","granazen","viki","paypal *google","paypal *disney","spotify","conta vivo","vivo ","deezer","apple "],"Apps"],
+    [["drogaria","farmacia","droga raia","drogasil"],"Farmácia"],
+    [["smartfit","academia","n2b nutri","med park","hospital","clinica","amib","associacao paulista","uhuu"],"Saúde"],
+    [["francisco lourenco","campea admin","danielle carvalho","peri construcoes","ana gomes","elizabeth lopes","faxin","condominio","energia"],"Casa"],
+    [["conselho reg","conselho regional","medicina do estado","associacao de medicina","contabilizeasy","governo do parana","caixa economica federal","pagar me"],"Empresa"],
+    [["mercadolivre","shopee","netshoes","redvirtua","maxspeed","grupo elite","americanas","magazine","amazon "],"Compras"],
+    [["zig*","candeia","mikael","cinema","teatro","show ","evento","ingresso"],"Lazer"],
+    [["zee dog","petshop","pet ","racao","veterinario"],"Pet"],
+    [["iof "],"Impostos"],
+    [["carolina rodrigues"],"Família/Presentes"],
+  ];
+  const categorizarLocal=desc=>{
+    const d=(desc||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    for(const [keys,cat] of RULES_CAT) if(keys.some(k=>d.includes(k))) return cat;
+    return "Outro";
+  };
+
+  const processPdf=async()=>{
+    if(!pdfFile) return;
+    setPdfProcessing(true); setPdfMsg("Lendo o PDF...");
+    try{
+      const base64=await new Promise((res,rej)=>{
+        const r=new FileReader();
+        r.onload=()=>res(r.result.split(",")[1]);
+        r.onerror=()=>rej(new Error("Falha ao ler"));
+        r.readAsDataURL(pdfFile);
+      });
+      setPdfMsg("Claude analisando a fatura...");
+      const prompt=`Analise esta fatura do cartão ${card.label} e extraia os lançamentos de compras.
+IGNORE: PAGTO DEBITO AUTOMATICO, créditos/estornos (com "+"), IOF INTERNACIONAL isolado, encargos/juros/multas, seção "Fatura anterior", seção "Recebidos".
+Para cada compra extraia: {"desc":"nome limpo","valor":0.00,"parcela":"X/Y ou vazio","data":"DD/MM/YYYY"}
+Limpe os nomes: remova "MLP*","IFD*","PAYPAL *","MARKET4U*COMPRA*123456". Market4U sem nome = "Mercado (Market4U)".
+Retorne SOMENTE o array JSON.`;
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:4000,
+          messages:[{role:"user",content:[
+            {type:"document",source:{type:"base64",media_type:"application/pdf",data:base64}},
+            {type:"text",text:prompt}
+          ]}]
+        })
+      });
+      if(!res.ok) throw new Error(`API error ${res.status}`);
+      const data=await res.json();
+      const txt=data.content?.map(b=>b.text||"").join("")||"";
+      const parsed=JSON.parse(txt.replace(/```json|```/g,"").trim());
+      const comCat=parsed.map(t=>({...t,valor:Number(t.valor||0),cat:categorizarLocal(t.desc),id:Date.now()+Math.random()}));
+      setPdfPreview(comCat);
+      setPdfMsg("");
+    }catch(e){
+      setImportMsg({ok:false,txt:"Erro ao processar PDF: "+e.message});
+      setShowPdfUpload(false);
+    }finally{
+      setPdfProcessing(false);
+    }
+  };
+
+  const confirmPdfImport=()=>{
+    const cartaoAlvo=activeCard;
+    const novos=[...(month.cartoes[cartaoAlvo]||[]),...pdfPreview];
+    setMonth({...month,cartoes:{...month.cartoes,[cartaoAlvo]:novos}});
+    setImportMsg({ok:true,txt:`✓ ${pdfPreview.length} lançamentos importados para ${card.label} · ${fmtBRL(pdfPreview.reduce((s,t)=>s+t.valor,0))}`});
+    setShowPdfUpload(false); setPdfFile(null); setPdfPreview([]);
+  };
+
   const add=()=>{
     if(!form.desc||!form.valor) return;
     setMonth({...month,cartoes:{...month.cartoes,[activeCard]:[...items,{...form,valor:Number(form.valor),id:Date.now()}]}});
@@ -637,10 +722,13 @@ function CartoesView({month,setMonth}) {
           <div style={{textAlign:"right"}}><div style={{fontSize:10,color:"#666"}}>Total cartões</div><div className="mono" style={{fontSize:16,color:"#f87171"}}>{fmtBRL(totalAll)}</div></div>
         </div>
       </Card>
-      {/* Import JSON button */}
+      {/* Import buttons */}
       <div style={{display:"flex",gap:8}}>
-        <button onClick={()=>{setShowImport(!showImport);setImportMsg(null);}} style={{flex:1,padding:"9px",borderRadius:10,border:`1px solid ${card.color}44`,background:"transparent",color:card.color,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-          📥 Importar JSON
+        <button onClick={()=>{setShowPdfUpload(!showPdfUpload);setShowImport(false);setImportMsg(null);}} style={{flex:1,padding:"9px",borderRadius:10,border:`1px solid ${card.color}44`,background:showPdfUpload?`${card.color}18`:"transparent",color:card.color,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          📄 Importar PDF
+        </button>
+        <button onClick={()=>{setShowImport(!showImport);setShowPdfUpload(false);setImportMsg(null);}} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(255,255,255,.1)",background:showImport?"rgba(255,255,255,.06)":"transparent",color:"#888",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          { } JSON
         </button>
         <button onClick={()=>setMonth({...month,cartoes:{...month.cartoes,[activeCard]:[]}})} style={{padding:"9px 14px",borderRadius:10,border:"1px solid rgba(239,68,68,.2)",background:"transparent",color:"#f87171",fontSize:11,cursor:"pointer"}}>
           🗑
@@ -653,18 +741,78 @@ function CartoesView({month,setMonth}) {
         </div>
       )}
 
-      {showImport&&(
+      {/* PDF Upload panel */}
+      {showPdfUpload&&(
         <Card style={{borderColor:`${card.color}33`}}>
-          <div style={{fontSize:12,color:card.color,fontWeight:600,marginBottom:8}}>{card.emoji} Importar lançamentos — {card.label}</div>
-          <div style={{fontSize:11,color:"#555",marginBottom:8,lineHeight:1.6}}>
-            Cole o JSON gerado pelo Claude (processamento do extrato):
+          <div style={{fontSize:12,color:card.color,fontWeight:600,marginBottom:8}}>{card.emoji} Importar fatura — {card.label}</div>
+          <div style={{fontSize:11,color:"#555",marginBottom:10,lineHeight:1.6}}>
+            Selecione o PDF da fatura do cartão. O Claude vai ler, extrair e categorizar todos os lançamentos automaticamente.
           </div>
+
+          {/* File drop area */}
+          <div onClick={()=>pdfInputRef.current?.click()} style={{
+            border:`2px dashed ${card.color}44`,borderRadius:12,padding:"20px",
+            textAlign:"center",cursor:"pointer",background:`${card.color}08`,
+            transition:"all .2s",
+          }}>
+            <input ref={pdfInputRef} type="file" accept=".pdf,application/pdf"
+              onChange={onPdfSelect} style={{display:"none"}}/>
+            <div style={{fontSize:28,marginBottom:6}}>{pdfFile?"📄":"📂"}</div>
+            {pdfFile
+              ?<><div style={{fontSize:13,fontWeight:600,color:card.color}}>{pdfFile.name}</div>
+                 <div style={{fontSize:10,color:"#555",marginTop:2}}>{(pdfFile.size/1024).toFixed(0)} KB · toque para trocar</div></>
+              :<><div style={{fontSize:13,color:"#555",fontWeight:500}}>Toque para selecionar o PDF</div>
+                 <div style={{fontSize:10,color:"#333",marginTop:2}}>Fatura {card.label}</div></>
+            }
+          </div>
+
+          {pdfProcessing&&(
+            <div style={{marginTop:10,padding:"10px 12px",borderRadius:10,background:"rgba(124,106,247,.08)",border:"1px solid rgba(124,106,247,.2)",fontSize:12,color:"#a89cf7",textAlign:"center"}}>
+              ⚙️ {pdfMsg||"Processando..."}
+            </div>
+          )}
+
+          {/* Preview dos lançamentos antes de confirmar */}
+          {pdfPreview.length>0&&!pdfProcessing&&(
+            <div style={{marginTop:10}}>
+              <div style={{fontSize:11,color:"#555",marginBottom:6,display:"flex",justifyContent:"space-between"}}>
+                <span>{pdfPreview.length} lançamentos encontrados</span>
+                <span className="mono" style={{color:"#f87171"}}>R$ {pdfPreview.reduce((s,t)=>s+t.valor,0).toFixed(2)}</span>
+              </div>
+              <div style={{maxHeight:200,overflowY:"auto",display:"flex",flexDirection:"column",gap:4}}>
+                {pdfPreview.map((t,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:"rgba(255,255,255,.03)",borderRadius:8}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:11,color:"#f0f0f5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
+                      <div style={{fontSize:9,color:"#444"}}>{t.cat}{t.parcela?` · ${t.parcela}`:""}</div>
+                    </div>
+                    <span className="mono" style={{fontSize:11,color:card.color,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+            <button onClick={()=>{setShowPdfUpload(false);setPdfFile(null);setPdfPreview([]);}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"#555",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+            <button onClick={pdfPreview.length>0?confirmPdfImport:processPdf} disabled={!pdfFile||pdfProcessing}
+              style={{padding:"10px",borderRadius:10,border:"none",background:!pdfFile||pdfProcessing?"#1a1a2a":card.color,color:!pdfFile||pdfProcessing?"#333":"#fff",fontSize:13,fontWeight:600,cursor:!pdfFile||pdfProcessing?"not-allowed":"pointer"}}>
+              {pdfProcessing?"Processando...":pdfPreview.length>0?"✅ Confirmar":"🤖 Processar"}
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {/* JSON Import panel */}
+      {showImport&&(
+        <Card style={{borderColor:"rgba(255,255,255,.1)"}}>
+          <div style={{fontSize:12,color:"#888",fontWeight:600,marginBottom:8}}>Importar via JSON</div>
           <textarea value={importJson} onChange={e=>setImportJson(e.target.value)}
             placeholder='{"tipo":"cartao","cartao":"inter","lancamentos":[...]}'
-            style={{width:"100%",minHeight:100,background:"rgba(0,0,0,.4)",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,padding:10,color:"#f0f0f5",fontSize:10,outline:"none",resize:"vertical",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5}}/>
+            style={{width:"100%",minHeight:80,background:"rgba(0,0,0,.4)",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,padding:10,color:"#f0f0f5",fontSize:10,outline:"none",resize:"vertical",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5}}/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
             <button onClick={()=>{setShowImport(false);setImportJson("");}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"#555",fontSize:13,cursor:"pointer"}}>Cancelar</button>
-            <button onClick={doImport} style={{padding:"10px",borderRadius:10,border:"none",background:card.color,color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Importar</button>
+            <button onClick={doImport} style={{padding:"10px",borderRadius:10,border:"none",background:"#555",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Importar</button>
           </div>
         </Card>
       )}
@@ -733,6 +881,85 @@ function PixView({month,setMonth}) {
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({desc:"",cat:CATS[0],data:today(),banco:"Inter",valor:""});
   const total=(month.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
+  const onPdfSelect=e=>{
+    const f=e.target.files?.[0];
+    if(f&&f.type==="application/pdf"){setPdfFile(f);setPdfPreview([]);}
+  };
+
+  const RULES_CAT = [
+    [["market4u","carrefour","assai","padaria","panificadora","piriquito","hortifruti","atacadao","pao de acucar","supermercado","minuto pa"],"Mercado"],
+    [["sampa cafe","oxxo","hamburger","osnir","mani ","cantina","churrascaria","restaurante","lanchonete","pizza","delta quality","cafe ","lanche"],"Comer fora"],
+    [["ifd*","ifood","rappi","zee now","delivery"],"Delivery"],
+    [["paypal *uber","uber br","uber do brasi","uber ","99app"],"Uber"],
+    [["sem parar","estacionamento","blz estacion","posto ","auto posto","shellbox","intertag","combustivel"],"Carro"],
+    [["applecombill","netflix","amazon kindle","google one","youtube","disney","mubi","openai","timeleft","granazen","viki","paypal *google","paypal *disney","spotify","conta vivo","vivo ","deezer","apple "],"Apps"],
+    [["drogaria","farmacia","droga raia","drogasil"],"Farmácia"],
+    [["smartfit","academia","n2b nutri","med park","hospital","clinica","amib","associacao paulista","uhuu"],"Saúde"],
+    [["francisco lourenco","campea admin","danielle carvalho","peri construcoes","ana gomes","elizabeth lopes","faxin","condominio","energia"],"Casa"],
+    [["conselho reg","conselho regional","medicina do estado","associacao de medicina","contabilizeasy","governo do parana","caixa economica federal","pagar me"],"Empresa"],
+    [["mercadolivre","shopee","netshoes","redvirtua","maxspeed","grupo elite","americanas","magazine","amazon "],"Compras"],
+    [["zig*","candeia","mikael","cinema","teatro","show ","evento","ingresso"],"Lazer"],
+    [["zee dog","petshop","pet ","racao","veterinario"],"Pet"],
+    [["iof "],"Impostos"],
+    [["carolina rodrigues"],"Família/Presentes"],
+  ];
+  const categorizarLocal=desc=>{
+    const d=(desc||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    for(const [keys,cat] of RULES_CAT) if(keys.some(k=>d.includes(k))) return cat;
+    return "Outro";
+  };
+
+  const processPdf=async()=>{
+    if(!pdfFile) return;
+    setPdfProcessing(true); setPdfMsg("Lendo o PDF...");
+    try{
+      const base64=await new Promise((res,rej)=>{
+        const r=new FileReader();
+        r.onload=()=>res(r.result.split(",")[1]);
+        r.onerror=()=>rej(new Error("Falha ao ler"));
+        r.readAsDataURL(pdfFile);
+      });
+      setPdfMsg("Claude analisando a fatura...");
+      const prompt=`Analise esta fatura do cartão ${card.label} e extraia os lançamentos de compras.
+IGNORE: PAGTO DEBITO AUTOMATICO, créditos/estornos (com "+"), IOF INTERNACIONAL isolado, encargos/juros/multas, seção "Fatura anterior", seção "Recebidos".
+Para cada compra extraia: {"desc":"nome limpo","valor":0.00,"parcela":"X/Y ou vazio","data":"DD/MM/YYYY"}
+Limpe os nomes: remova "MLP*","IFD*","PAYPAL *","MARKET4U*COMPRA*123456". Market4U sem nome = "Mercado (Market4U)".
+Retorne SOMENTE o array JSON.`;
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:4000,
+          messages:[{role:"user",content:[
+            {type:"document",source:{type:"base64",media_type:"application/pdf",data:base64}},
+            {type:"text",text:prompt}
+          ]}]
+        })
+      });
+      if(!res.ok) throw new Error(`API error ${res.status}`);
+      const data=await res.json();
+      const txt=data.content?.map(b=>b.text||"").join("")||"";
+      const parsed=JSON.parse(txt.replace(/```json|```/g,"").trim());
+      const comCat=parsed.map(t=>({...t,valor:Number(t.valor||0),cat:categorizarLocal(t.desc),id:Date.now()+Math.random()}));
+      setPdfPreview(comCat);
+      setPdfMsg("");
+    }catch(e){
+      setImportMsg({ok:false,txt:"Erro ao processar PDF: "+e.message});
+      setShowPdfUpload(false);
+    }finally{
+      setPdfProcessing(false);
+    }
+  };
+
+  const confirmPdfImport=()=>{
+    const cartaoAlvo=activeCard;
+    const novos=[...(month.cartoes[cartaoAlvo]||[]),...pdfPreview];
+    setMonth({...month,cartoes:{...month.cartoes,[cartaoAlvo]:novos}});
+    setImportMsg({ok:true,txt:`✓ ${pdfPreview.length} lançamentos importados para ${card.label} · ${fmtBRL(pdfPreview.reduce((s,t)=>s+t.valor,0))}`});
+    setShowPdfUpload(false); setPdfFile(null); setPdfPreview([]);
+  };
+
   const add=()=>{
     if(!form.desc||!form.valor) return;
     setMonth({...month,variaveis:[...(month.variaveis||[]),{...form,valor:Number(form.valor),id:Date.now()}]});
@@ -1167,4 +1394,3 @@ export default function App() {
     </>
   );
 }
-
