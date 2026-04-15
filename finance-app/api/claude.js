@@ -1,4 +1,3 @@
-api/claude.js
 export default async function handler(req, res) {
   // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
