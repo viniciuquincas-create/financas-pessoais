@@ -1749,31 +1749,75 @@ export default function App() {
     setGdriveStatus("connecting");
     try {
       await gdriveSignIn();
-      // Load all months from Drive
-      const driveData = await gdriveLoad();
-      if(driveData) {
-        // Save all months to localStorage
-        for(const [key,val] of Object.entries(driveData)) {
-          await save(key, val);
-        }
-        // Reload current month
-        const d = await load(storageKey);
-        if(d) setMonthRaw(d);
-      }
-      // Save current state to Drive
+
+      // 1. Collect local data
       const allKeys = await window.storage.list("month:");
-      const allData = {};
+      const localData = {};
       for(const key of (allKeys?.keys||[])) {
         const val = await load(key);
-        if(val) allData[key] = val;
+        if(val) localData[key] = val;
       }
-      await gdriveSave(allData);
+
+      // 2. Load data from Drive
+      const driveData = await gdriveLoad();
+
+      // 3. Merge: Drive data wins for keys not in local, local wins for keys not in Drive
+      //    For same key: use whichever has more data (more cartao transactions)
+      const merged = {...(driveData||{}), ...localData};
+      if(driveData) {
+        for(const key of Object.keys(driveData)) {
+          if(!localData[key]) {
+            merged[key] = driveData[key];
+          } else {
+            // Pick the one with more transaction data
+            const localCount = Object.values(localData[key]?.cartoes||{}).flat().length;
+            const driveCount = Object.values(driveData[key]?.cartoes||{}).flat().length;
+            merged[key] = driveCount > localCount ? driveData[key] : localData[key];
+          }
+        }
+      }
+
+      // 4. Save merged data to localStorage
+      for(const [key,val] of Object.entries(merged)) {
+        await save(key, JSON.stringify(val));
+      }
+
+      // 5. Save merged data back to Drive
+      await gdriveSave(merged);
+
+      // 6. Reload current month
+      const reloaded = merged[storageKey];
+      if(reloaded) {
+        const seed = seedMonth(mesKey);
+        const migrated = {
+          ...seed, ...reloaded,
+          variaveis: reloaded.variaveis||reloaded.pix||[],
+          cartoes: reloaded.cartoes||seed.cartoes,
+          plantoes: (reloaded.plantoes||seed.plantoes).map((p,i)=>({
+            ativo:true,
+            diaReceb:seed.plantoes[i]?.diaReceb||0,
+            statusReceb:"aguardando",
+            ...p,
+          })),
+          bolsaDia: reloaded.bolsaDia||5,
+          bolsaStatus: reloaded.bolsaStatus||"aguardando",
+          auxilioDia: reloaded.auxilioDia||5,
+          auxilioStatus: reloaded.auxilioStatus||"aguardando",
+          fixas: reloaded.fixas||seed.fixas,
+          investimentos: reloaded.investimentos||seed.investimentos,
+          bolsa: reloaded.bolsa||0,
+          auxilio: reloaded.auxilio||0,
+          receitasExtra: reloaded.receitasExtra||[],
+        };
+        setMonthRaw(migrated);
+      }
+
       setGdriveStatus("synced");
-      setTimeout(()=>setGdriveStatus("idle"),3000);
+      setTimeout(()=>setGdriveStatus("idle"), 3000);
     } catch(e) {
       console.error("Drive sync error:", e);
       setGdriveStatus("error");
-      setTimeout(()=>setGdriveStatus("idle"),3000);
+      setTimeout(()=>setGdriveStatus("idle"), 3000);
     }
   };
 
