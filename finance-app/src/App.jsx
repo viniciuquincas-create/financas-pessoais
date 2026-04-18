@@ -30,11 +30,17 @@ async function gdriveLoad() {
   ).then(r=>r.json());
   if(!list.files?.length) return null;
   const fileId = list.files[0].id;
-  const data = await fetch(
+  const raw = await fetch(
     "https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media",
     { headers: { Authorization: "Bearer " + gdriveToken } }
   ).then(r=>r.json());
-  return data;
+  // Normalize: parse any string values into objects
+  const normalized = {};
+  for(const [k,v] of Object.entries(raw)) {
+    try { normalized[k] = typeof v==="string" ? JSON.parse(v) : v; }
+    catch { normalized[k] = v; }
+  }
+  return normalized;
 }
 
 async function gdriveSave(data) {
