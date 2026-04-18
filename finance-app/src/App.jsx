@@ -1775,7 +1775,7 @@ export default function App() {
     try {
       await gdriveSignIn();
 
-      // 1. Load Drive data first
+      // 1. Load Drive data FIRST — Drive is source of truth
       const driveData = await gdriveLoad() || {};
 
       // 2. Collect local data
@@ -1786,17 +1786,20 @@ export default function App() {
         if(val) localData[key] = val;
       }
 
-      // 3. Merge: for each key, keep whichever has MORE data
+      // 3. Merge: always keep whichever has MORE data
       const allMonthKeys = new Set([...Object.keys(driveData), ...Object.keys(localData)]);
       const merged = {};
       for(const key of allMonthKeys) {
         const local = localData[key];
         const drive = driveData[key];
-        if(!local && drive) merged[key] = drive;
-        else if(local && !drive) merged[key] = local;
-        else if(local && drive) {
-          // Keep the one with more actual data
-          merged[key] = countData(drive) > countData(local) ? drive : local;
+        if(!drive) merged[key] = local;
+        else if(!local) merged[key] = drive;
+        else {
+          const dc = countData(typeof drive==="string"?JSON.parse(drive):drive);
+          const lc = countData(typeof local==="string"?JSON.parse(local):local);
+          merged[key] = dc >= lc
+            ? (typeof drive==="string"?JSON.parse(drive):drive)
+            : (typeof local==="string"?JSON.parse(local):local);
         }
       }
 
@@ -1805,12 +1808,15 @@ export default function App() {
         await save(key, JSON.stringify(val));
       }
 
-      // 5. Save merged to Drive
+      // 5. Save merged back to Drive
       await gdriveSave(merged);
 
       // 6. Reload current month
       const reloaded = merged[storageKey];
-      if(reloaded) setMonthRaw(migrateMonth(reloaded, mesKey));
+      if(reloaded) {
+        const d = typeof reloaded==="string"?JSON.parse(reloaded):reloaded;
+        setMonthRaw(migrateMonth(d, mesKey));
+      }
 
       setGdriveStatus("synced");
       setTimeout(()=>setGdriveStatus("idle"), 3000);
@@ -1818,6 +1824,23 @@ export default function App() {
       console.error("Drive sync error:", e);
       setGdriveStatus("error");
       setTimeout(()=>setGdriveStatus("idle"), 3000);
+    }
+  };
+
+  // Import backup JSON file directly
+  const importBackup = async (file) => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      for(const [key,val] of Object.entries(data)) {
+        await save(key, JSON.stringify(typeof val==="string"?JSON.parse(val):val));
+      }
+      // Reload current month
+      const reloaded = await load(storageKey);
+      if(reloaded) setMonthRaw(migrateMonth(reloaded, mesKey));
+      alert("Backup importado com sucesso!");
+    } catch(e) {
+      alert("Erro ao importar backup: " + e.message);
     }
   };
 
