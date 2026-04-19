@@ -337,7 +337,7 @@ function PlantoesView({month,setMonth,mesKey}) {
     setAgendaLoading(true);
     setAgendaMsg(null);
     try {
-      const res = await fetch("/api/agenda");
+      const res = await fetch(`/api/agenda?mes=${mesKey}`);
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       // data should be array of plantoes
