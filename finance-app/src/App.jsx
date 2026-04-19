@@ -340,16 +340,18 @@ function PlantoesView({month,setMonth,mesKey}) {
       const res = await fetch(`/api/agenda?mes=${mesKey}`);
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      // data should be array of plantoes
-      const arr = Array.isArray(data) ? data : data.plantoes || [];
-      if(!arr.length) throw new Error("Nenhum plantão encontrado");
+      // data format: {"plantoes":{"Leonor":{"n":9,"horas":153},...}, "periodos":{...}}
+      const plantoes = data.plantoes || {};
+      const locais = Object.keys(plantoes);
+      if(!locais.length) throw new Error("Nenhum plantão encontrado");
       const updated = month.plantoes.map(p => {
-        const match = arr.find(a => a.local?.toLowerCase()===p.local?.toLowerCase());
-        if(!match) return p;
-        return {...p, n: match.n||p.n, horas: match.horas||p.horas, valorH: match.valorH||p.valorH, fromAgenda:true};
+        const d = plantoes[p.local];
+        if(!d) return p;
+        return {...p, n: d.n||0, horas: d.horas||0, fromAgenda:true};
       });
       setMonth({...month, plantoes: updated});
-      setAgendaMsg({ok:true, txt:`✓ ${arr.length} plantões sincronizados`});
+      const resumo = locais.map(l=>`${l}: ${plantoes[l].n} plant. ${plantoes[l].horas}h`).join(" · ");
+      setAgendaMsg({ok:true, txt:`✓ Sincronizado — ${resumo}`});
     } catch(e) {
       setAgendaMsg({ok:false, txt:"Erro: "+e.message});
     } finally {
