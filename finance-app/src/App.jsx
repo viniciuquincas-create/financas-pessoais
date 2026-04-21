@@ -1819,51 +1819,46 @@ export default function App() {
       + (d.fixas||[]).filter(f=>f.valor>0).length;
   };
 
-  const syncGdrive = async () => {
+  // Salva dados locais no Drive — nunca lê, nunca sobrescreve tela
+  const backupToDrive = async () => {
     setGdriveStatus("connecting");
     try {
       await gdriveSignIn();
-
-      // Collect ALL local data
-      const allKeys = await window.storage.list("month:");
+      const allKeys = Object.keys(localStorage).filter(k=>k.startsWith("month:"));
       const localData = {};
-      for(const key of (allKeys?.keys||[])) {
-        const raw = localStorage.getItem(key);
-        if(raw) localData[key] = raw; // store as raw string
+      for(const key of allKeys) {
+        try { localData[key] = JSON.parse(localStorage.getItem(key)); } catch {}
       }
-
-      // Load Drive data
-      const driveData = await gdriveLoad() || {};
-
-      // Merge: for each key pick whichever has more data
-      const allMonthKeys = new Set([...Object.keys(driveData), ...Object.keys(localData)]);
-      const merged = {};
-      for(const key of allMonthKeys) {
-        const localRaw = localData[key];
-        const driveRaw = driveData[key];
-        const localObj = localRaw ? (typeof localRaw==="string" ? (() => { try{ return JSON.parse(localRaw); }catch{ return null; } })() : localRaw) : null;
-        const driveObj = driveRaw ? (typeof driveRaw==="string" ? (() => { try{ return JSON.parse(driveRaw); }catch{ return null; } })() : driveRaw) : null;
-        if(!driveObj) { merged[key] = localObj; continue; }
-        if(!localObj) { merged[key] = driveObj; continue; }
-        merged[key] = countData(driveObj) >= countData(localObj) ? driveObj : localObj;
-      }
-
-      // Write merged back to localStorage (never erase existing data)
-      for(const [key,val] of Object.entries(merged)) {
-        if(val) localStorage.setItem(key, JSON.stringify(val));
-      }
-
-      // Save merged to Drive
-      await gdriveSave(merged);
-
-      // Reload current month from merged
-      const cur = merged[storageKey];
-      if(cur) setMonthRaw(migrateMonth(cur, mesKey));
-
+      await gdriveSave(localData);
       setGdriveStatus("synced");
       setTimeout(()=>setGdriveStatus("idle"), 3000);
     } catch(e) {
-      console.error("Drive sync error:", e);
+      console.error("Backup error:", e);
+      setGdriveStatus("error");
+      setTimeout(()=>setGdriveStatus("idle"), 3000);
+    }
+  };
+
+  // Baixa dados do Drive — só preenche meses ausentes localmente
+  const restoreFromDrive = async () => {
+    setGdriveStatus("connecting");
+    try {
+      await gdriveSignIn();
+      const driveData = await gdriveLoad() || {};
+      for(const [key,val] of Object.entries(driveData)) {
+        if(!localStorage.getItem(key)) {
+          localStorage.setItem(key, typeof val==="string"?val:JSON.stringify(val));
+        }
+      }
+      // Recarrega mês atual se veio do Drive
+      const cur = localStorage.getItem(storageKey);
+      if(cur) {
+        try { setMonthRaw(migrateMonth(JSON.parse(cur), mesKey)); } catch {}
+      }
+      setGdriveStatus("synced");
+      setTimeout(()=>setGdriveStatus("idle"), 3000);
+    } catch(e) {
+      console.error("Restore error:", e);
       setGdriveStatus("error");
       setTimeout(()=>setGdriveStatus("idle"), 3000);
     }
