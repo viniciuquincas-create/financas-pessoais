@@ -347,7 +347,13 @@ function PlantoesView({month,setMonth,mesKey}) {
       const updated = month.plantoes.map(p => {
         const d = plantoes[p.local];
         if(!d) return p;
-        return {...p, n: d.n||0, horas: d.horas||0, fromAgenda:true};
+        // Só sobrescreve se o valor atual for zero (não editado manualmente)
+        return {
+          ...p,
+          n: p.n > 0 ? p.n : (d.n||0),
+          horas: p.horas > 0 ? p.horas : (d.horas||0),
+          fromAgenda: true
+        };
       });
       setMonth({...month, plantoes: updated});
       const resumo = locais.map(l=>`${l}: ${plantoes[l].n} plant. ${plantoes[l].horas}h`).join(" · ");
