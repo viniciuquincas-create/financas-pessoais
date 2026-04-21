@@ -348,8 +348,8 @@ function PlantoesView({month,setMonth,mesKey}) {
       const updated = month.plantoes.map(p => {
         const d = plantoes[p.local];
         if(!d) return p;
-        // Se foi editado manualmente, respeita o valor do usuário
-        if(p.editadoManualmente) return p;
+        // Se está fixado, nunca sobrescreve
+        if(p.bloqueadoSync || p.editadoManualmente) return p;
         return {...p, n: d.n||0, horas: d.horas||0, fromAgenda:true};
       });
       setMonth({...month, plantoes: updated});
@@ -491,7 +491,8 @@ function PlantoesView({month,setMonth,mesKey}) {
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <div style={{fontSize:14,fontWeight:600,color:ativo?"#a89cf7":"#444"}}>{p.local}</div>
                 {p.fromAgenda&&ativo&&<span style={{fontSize:10,color:"#4ade80",background:"rgba(74,222,128,.1)",padding:"2px 7px",borderRadius:10}}>📅 agenda</span>}
-                {p.editadoManualmente&&ativo&&<span onClick={()=>{const pl=[...month.plantoes];pl[i]={...pl[i],editadoManualmente:false};setMonth({...month,plantoes:pl});}} style={{fontSize:10,color:"#fbbf24",background:"rgba(251,191,36,.1)",padding:"2px 7px",borderRadius:10,cursor:"pointer"}}>✏ manual ✕</span>}
+                {p.bloqueadoSync&&ativo&&<span onClick={()=>{const pl=[...month.plantoes];pl[i]={...pl[i],bloqueadoSync:false,editadoManualmente:false};setMonth({...month,plantoes:pl});}} style={{fontSize:10,color:"#f97316",background:"rgba(249,115,22,.1)",padding:"2px 7px",borderRadius:10,cursor:"pointer",border:"1px solid rgba(249,115,22,.2)"}}>🔒 fixo ✕</span>}
+                {p.editadoManualmente&&!p.bloqueadoSync&&ativo&&<span onClick={()=>{const pl=[...month.plantoes];pl[i]={...pl[i],bloqueadoSync:true};setMonth({...month,plantoes:pl});}} style={{fontSize:10,color:"#fbbf24",background:"rgba(251,191,36,.1)",padding:"2px 7px",borderRadius:10,cursor:"pointer",border:"1px solid rgba(251,191,36,.2)"}}>✏ manual → fixar</span>}
               </div>
               <button onClick={()=>togglePlantao(i)} style={{
                 background:ativo?"rgba(239,68,68,.08)":"rgba(74,222,128,.08)",
