@@ -1880,15 +1880,22 @@ export default function App() {
               <div style={{fontSize:18,fontWeight:700,letterSpacing:-.5}}>{NAV.find(n=>n.id===view)?.label}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <button onClick={syncGdrive} disabled={gdriveStatus==="connecting"} style={{
-              background:gdriveStatus==="synced"?"rgba(74,222,128,.15)":gdriveStatus==="error"?"rgba(239,68,68,.15)":"rgba(255,255,255,.06)",
-              border:`1px solid ${gdriveStatus==="synced"?"rgba(74,222,128,.3)":gdriveStatus==="error"?"rgba(239,68,68,.3)":"rgba(255,255,255,.1)"}`,
-              borderRadius:8,padding:"4px 10px",
-              color:gdriveStatus==="synced"?"#4ade80":gdriveStatus==="error"?"#f87171":"#555",
-              fontSize:10,fontWeight:600,cursor:"pointer",
-            }}>
-              {gdriveStatus==="connecting"?"⏳":gdriveStatus==="synced"?"✓ Sync":gdriveStatus==="error"?"✗ Erro":"☁ Drive"}
-            </button>
+            <div style={{display:"flex",gap:4}}>
+              <button onClick={backupToDrive} disabled={gdriveStatus==="connecting"} style={{
+                background:gdriveStatus==="synced"?"rgba(74,222,128,.15)":gdriveStatus==="error"?"rgba(239,68,68,.15)":"rgba(255,255,255,.06)",
+                border:`1px solid ${gdriveStatus==="synced"?"rgba(74,222,128,.3)":gdriveStatus==="error"?"rgba(239,68,68,.3)":"rgba(255,255,255,.1)"}`,
+                borderRadius:8,padding:"4px 10px",
+                color:gdriveStatus==="synced"?"#4ade80":gdriveStatus==="error"?"#f87171":"#555",
+                fontSize:10,fontWeight:600,cursor:"pointer",
+              }}>
+                {gdriveStatus==="connecting"?"⏳":gdriveStatus==="synced"?"✓ Backup":gdriveStatus==="error"?"✗ Erro":"☁ Backup"}
+              </button>
+              <button onClick={restoreFromDrive} disabled={gdriveStatus==="connecting"} style={{
+                background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",
+                borderRadius:8,padding:"4px 10px",color:"#555",
+                fontSize:10,fontWeight:600,cursor:"pointer",
+              }}>⬇</button>
+            </div>
             <div style={{width:6,height:6,borderRadius:"50%",background:saving?"#fbbf24":"#4ade80",transition:"background .3s"}}/>
           </div>
           </div>
