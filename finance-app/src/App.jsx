@@ -115,7 +115,7 @@ const seedMonth = key => ({
   key,
   plantoes: LOCAIS.map((l,i)=>({
     local:l, n:0, horas:0, valorH:0, fromAgenda:false, ativo:true,
-    diaReceb: l==="Leonor"?25:0,
+    diaReceb: l==="Leonor"?15:0,
     statusReceb:"aguardando",
   })),
   bolsa: 0,
