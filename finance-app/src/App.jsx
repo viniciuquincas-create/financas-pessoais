@@ -325,7 +325,8 @@ function PlantoesView({month,setMonth,mesKey}) {
 
   const updPlantao=(i,f,v)=>{
     const p=[...month.plantoes];
-    p[i]={...p[i],[f]:["n","horas","valorH"].includes(f)?Number(v)||0:v};
+    const editManual = ["n","horas"].includes(f) ? {editadoManualmente:true} : {};
+    p[i]={...p[i],[f]:["n","horas","valorH"].includes(f)?Number(v)||0:v,...editManual};
     setMonth({...month,plantoes:p});
   };
   const togglePlantao=(i)=>{
@@ -347,13 +348,9 @@ function PlantoesView({month,setMonth,mesKey}) {
       const updated = month.plantoes.map(p => {
         const d = plantoes[p.local];
         if(!d) return p;
-        // Só sobrescreve se o valor atual for zero (não editado manualmente)
-        return {
-          ...p,
-          n: p.n > 0 ? p.n : (d.n||0),
-          horas: p.horas > 0 ? p.horas : (d.horas||0),
-          fromAgenda: true
-        };
+        // Se foi editado manualmente, respeita o valor do usuário
+        if(p.editadoManualmente) return p;
+        return {...p, n: d.n||0, horas: d.horas||0, fromAgenda:true};
       });
       setMonth({...month, plantoes: updated});
       const resumo = locais.map(l=>`${l}: ${plantoes[l].n} plant. ${plantoes[l].horas}h`).join(" · ");
@@ -494,6 +491,7 @@ function PlantoesView({month,setMonth,mesKey}) {
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <div style={{fontSize:14,fontWeight:600,color:ativo?"#a89cf7":"#444"}}>{p.local}</div>
                 {p.fromAgenda&&ativo&&<span style={{fontSize:10,color:"#4ade80",background:"rgba(74,222,128,.1)",padding:"2px 7px",borderRadius:10}}>📅 agenda</span>}
+                {p.editadoManualmente&&ativo&&<span onClick={()=>{const pl=[...month.plantoes];pl[i]={...pl[i],editadoManualmente:false};setMonth({...month,plantoes:pl});}} style={{fontSize:10,color:"#fbbf24",background:"rgba(251,191,36,.1)",padding:"2px 7px",borderRadius:10,cursor:"pointer"}}>✏ manual ✕</span>}
               </div>
               <button onClick={()=>togglePlantao(i)} style={{
                 background:ativo?"rgba(239,68,68,.08)":"rgba(74,222,128,.08)",
