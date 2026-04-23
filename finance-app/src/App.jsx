@@ -1864,6 +1864,54 @@ export default function App() {
     }
   };
 
+  const [autenticado, setAutenticado] = useState(()=>sessionStorage.getItem("auth")==="ok");
+  const [senha, setSenha] = useState("");
+  const [erroSenha, setErroSenha] = useState(false);
+
+  const tentarLogin = () => {
+    if(senha === "1821") {
+      sessionStorage.setItem("auth","ok");
+      setAutenticado(true);
+    } else {
+      setErroSenha(true);
+      setSenha("");
+      setTimeout(()=>setErroSenha(false), 2000);
+    }
+  };
+
+  if(!autenticado) return (
+    <>
+      <style>{G}</style>
+      <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0a0a0f",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px"}}>
+        <div style={{fontSize:48,marginBottom:16}}>🦁</div>
+        <div style={{fontSize:22,fontWeight:700,letterSpacing:-.5,marginBottom:4}}>Finanças Pessoais</div>
+        <div style={{fontSize:12,color:"#333",marginBottom:40}}>Acesso restrito</div>
+        <div style={{width:"100%",display:"flex",flexDirection:"column",gap:12}}>
+          <input
+            type="password"
+            value={senha}
+            onChange={e=>setSenha(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&tentarLogin()}
+            placeholder="Senha"
+            autoFocus
+            style={{
+              background:"rgba(255,255,255,.06)",
+              border:`1px solid ${erroSenha?"rgba(239,68,68,.5)":"rgba(255,255,255,.1)"}`,
+              borderRadius:12,padding:"14px 16px",color:"#f0f0f5",
+              fontSize:16,outline:"none",width:"100%",textAlign:"center",
+              letterSpacing:4,transition:"border .2s"
+            }}
+          />
+          {erroSenha&&<div style={{textAlign:"center",fontSize:12,color:"#f87171"}}>Senha incorreta</div>}
+          <button onClick={tentarLogin} style={{
+            background:"#7c6af7",border:"none",borderRadius:12,
+            padding:"14px",color:"#fff",fontSize:14,fontWeight:600,cursor:"pointer"
+          }}>Entrar</button>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <>
       <style>{G}</style>
