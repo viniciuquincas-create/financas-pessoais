@@ -1,40 +1,21 @@
 import { useState, useEffect, useRef } from "react";
 
 
-// ── Google Drive Sync ─────────────────────────────────────────
-const GOOGLE_CLIENT_ID = "821561382667-9pvh8v8nu8k8l1qiv1u96b0d1e55qioh.apps.googleusercontent.com";
-const GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-const GDRIVE_FILE = "financas-pessoais.json";
+// ── Supabase Sync ─────────────────────────────────────────────
+const SUPABASE_URL = "https://jrzcbthmmkaaeyuakhsb.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpyemNidGhtbWthYWV5dWFraHNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMTM3NDEsImV4cCI6MjA5MjY4OTc0MX0.YXSdk38JHCRB7A6xxokUWlJW4Rv7yuXTlcFnP2esIxM";
 
-let gdriveToken = null;
-
-async function gdriveSignIn() {
-  return new Promise((resolve, reject) => {
-    const client = window.google?.accounts?.oauth2?.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: GDRIVE_SCOPE,
-      callback: (resp) => {
-        if(resp.error) reject(resp.error);
-        else { gdriveToken = resp.access_token; resolve(resp.access_token); }
-      },
-    });
-    client?.requestAccessToken();
+async function supabaseLoad() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/financas?id=eq.vinicius&select=dados`, {
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+    }
   });
-}
-
-async function gdriveLoad() {
-  if(!gdriveToken) return null;
-  const list = await fetch(
-    "https://www.googleapis.com/drive/v3/files?q=name%3D%27" + GDRIVE_FILE + "%27+and+trashed%3Dfalse&spaces=drive",
-    { headers: { Authorization: "Bearer " + gdriveToken } }
-  ).then(r=>r.json());
-  if(!list.files?.length) return null;
-  const fileId = list.files[0].id;
-  const raw = await fetch(
-    "https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media",
-    { headers: { Authorization: "Bearer " + gdriveToken } }
-  ).then(r=>r.json());
-  // Normalize: parse any string values into objects
+  const data = await res.json();
+  if(!data?.length || !data[0]?.dados) return null;
+  const raw = data[0].dados;
+  // Normalize string values
   const normalized = {};
   for(const [k,v] of Object.entries(raw)) {
     try { normalized[k] = typeof v==="string" ? JSON.parse(v) : v; }
@@ -43,38 +24,17 @@ async function gdriveLoad() {
   return normalized;
 }
 
-async function gdriveSave(data) {
-  if(!gdriveToken) return;
-  // Check if file exists
-  const list = await fetch(
-    "https://www.googleapis.com/drive/v3/files?q=name%3D%27" + GDRIVE_FILE + "%27+and+trashed%3Dfalse&spaces=drive",
-    { headers: { Authorization: "Bearer " + gdriveToken } }
-  ).then(r=>r.json());
-
-  const content = JSON.stringify(data);
-  const blob = new Blob([content], {type:"application/json"});
-  const meta = JSON.stringify({name: GDRIVE_FILE});
-
-  if(list.files?.length) {
-    // Update existing file
-    const fileId = list.files[0].id;
-    const form = new FormData();
-    form.append("metadata", new Blob([JSON.stringify({})], {type:"application/json"}));
-    form.append("file", blob);
-    await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files/" + fileId + "?uploadType=multipart",
-      { method:"PATCH", headers:{ Authorization:"Bearer "+gdriveToken }, body:form }
-    );
-  } else {
-    // Create new file
-    const form = new FormData();
-    form.append("metadata", new Blob([meta], {type:"application/json"}));
-    form.append("file", blob);
-    await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-      { method:"POST", headers:{ Authorization:"Bearer "+gdriveToken }, body:form }
-    );
-  }
+async function supabaseSave(dados) {
+  await fetch(`${SUPABASE_URL}/rest/v1/financas?id=eq.vinicius`, {
+    method: "PATCH",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=minimal",
+    },
+    body: JSON.stringify({ dados, atualizado_em: new Date().toISOString() })
+  });
 }
 
 const CATS_DEFAULT = ["Mercado","Comer fora","Delivery","Carro","Uber","Farmácia","Empresa","Casa","Apps","Lazer","Compras","Pet","Família/Presentes","Impostos","Educação","Viagem","Saúde","Outro"];
@@ -1751,15 +1711,6 @@ export default function App() {
     load("config:cats").then(d=>{ if(d&&Array.isArray(d)){ CATS=d; setCatsState(d); } });
   },[]);
 
-  // Load Google API script dynamically
-  useEffect(()=>{
-    if(document.querySelector('script[src*="accounts.google.com"]')) return;
-    const s=document.createElement('script');
-    s.src='https://accounts.google.com/gsi/client';
-    s.async=true;
-    document.head.appendChild(s);
-  },[]);
-
   useEffect(()=>{
     setMonthRaw(null);
     load(storageKey).then(d=>{
@@ -1819,17 +1770,16 @@ export default function App() {
       + (d.fixas||[]).filter(f=>f.valor>0).length;
   };
 
-  // Salva dados locais no Drive — nunca lê, nunca sobrescreve tela
+  // Salva dados locais no Supabase
   const backupToDrive = async () => {
     setGdriveStatus("connecting");
     try {
-      await gdriveSignIn();
       const allKeys = Object.keys(localStorage).filter(k=>k.startsWith("month:"));
       const localData = {};
       for(const key of allKeys) {
         try { localData[key] = JSON.parse(localStorage.getItem(key)); } catch {}
       }
-      await gdriveSave(localData);
+      await supabaseSave(localData);
       setGdriveStatus("synced");
       setTimeout(()=>setGdriveStatus("idle"), 3000);
     } catch(e) {
@@ -1839,18 +1789,15 @@ export default function App() {
     }
   };
 
-  // Baixa dados do Drive — só preenche meses ausentes localmente
+  // Baixa dados do Supabase — só preenche meses ausentes localmente
   const restoreFromDrive = async () => {
     setGdriveStatus("connecting");
     try {
-      await gdriveSignIn();
-      const driveData = await gdriveLoad() || {};
-      for(const [key,val] of Object.entries(driveData)) {
-        if(!localStorage.getItem(key)) {
-          localStorage.setItem(key, typeof val==="string"?val:JSON.stringify(val));
-        }
+      const remoteData = await supabaseLoad() || {};
+      for(const [key,val] of Object.entries(remoteData)) {
+        localStorage.setItem(key, typeof val==="string"?val:JSON.stringify(val));
       }
-      // Recarrega mês atual se veio do Drive
+      // Recarrega mês atual
       const cur = localStorage.getItem(storageKey);
       if(cur) {
         try { setMonthRaw(migrateMonth(JSON.parse(cur), mesKey)); } catch {}
@@ -1931,7 +1878,7 @@ export default function App() {
                 color:gdriveStatus==="synced"?"#4ade80":gdriveStatus==="error"?"#f87171":"#555",
                 fontSize:10,fontWeight:600,cursor:"pointer",
               }}>
-                {gdriveStatus==="connecting"?"⏳":gdriveStatus==="synced"?"✓ Backup":gdriveStatus==="error"?"✗ Erro":"☁ Backup"}
+                {gdriveStatus==="connecting"?"⏳":gdriveStatus==="synced"?"✓ Salvo":gdriveStatus==="error"?"✗ Erro":"☁ Salvar"}
               </button>
               <button onClick={restoreFromDrive} disabled={gdriveStatus==="connecting"} style={{
                 background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",
