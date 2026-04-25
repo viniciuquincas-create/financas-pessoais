@@ -1711,6 +1711,22 @@ export default function App() {
     load("config:cats").then(d=>{ if(d&&Array.isArray(d)){ CATS=d; setCatsState(d); } });
   },[]);
 
+  // Auto-load from Supabase on first open if localStorage is empty
+  useEffect(()=>{
+    const hasLocal = Object.keys(localStorage).some(k=>k.startsWith("month:"));
+    if(!hasLocal) {
+      setGdriveStatus("connecting");
+      supabaseLoad().then(remoteData=>{
+        if(remoteData) {
+          for(const [key,val] of Object.entries(remoteData)) {
+            localStorage.setItem(key, typeof val==="string"?val:JSON.stringify(val));
+          }
+        }
+        setGdriveStatus("idle");
+      }).catch(()=>setGdriveStatus("idle"));
+    }
+  },[]);
+
   useEffect(()=>{
     setMonthRaw(null);
     load(storageKey).then(d=>{
@@ -1742,7 +1758,24 @@ export default function App() {
     });
     setView("dashboard");
   },[mesKey]);
-  useEffect(()=>{ if(!month) return; setSaving(true); const t=setTimeout(()=>save(storageKey,month).then(()=>setSaving(false)),700); return()=>clearTimeout(t); },[month]);
+  useEffect(()=>{
+    if(!month) return;
+    setSaving(true);
+    const t=setTimeout(async()=>{
+      await save(storageKey,month);
+      // Auto-sync to Supabase (debounced 3s)
+      try {
+        const allKeys = Object.keys(localStorage).filter(k=>k.startsWith("month:"));
+        const localData = {};
+        for(const key of allKeys) {
+          try { localData[key] = JSON.parse(localStorage.getItem(key)); } catch {}
+        }
+        await supabaseSave(localData);
+      } catch(e) { console.warn("Auto-sync failed:", e); }
+      setSaving(false);
+    }, 3000);
+    return()=>clearTimeout(t);
+  },[month]);
 
   const migrateMonth = (d, key) => {
     if(!d) return null;
@@ -1870,20 +1903,14 @@ export default function App() {
               <div style={{fontSize:18,fontWeight:700,letterSpacing:-.5}}>{NAV.find(n=>n.id===view)?.label}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <div style={{display:"flex",gap:4}}>
-              <button onClick={backupToDrive} disabled={gdriveStatus==="connecting"} style={{
-                background:gdriveStatus==="synced"?"rgba(74,222,128,.15)":gdriveStatus==="error"?"rgba(239,68,68,.15)":"rgba(255,255,255,.06)",
-                border:`1px solid ${gdriveStatus==="synced"?"rgba(74,222,128,.3)":gdriveStatus==="error"?"rgba(239,68,68,.3)":"rgba(255,255,255,.1)"}`,
-                borderRadius:8,padding:"4px 10px",
-                color:gdriveStatus==="synced"?"#4ade80":gdriveStatus==="error"?"#f87171":"#555",
-                fontSize:10,fontWeight:600,cursor:"pointer",
-              }}>
-                {gdriveStatus==="connecting"?"⏳":gdriveStatus==="synced"?"✓ Salvo":gdriveStatus==="error"?"✗ Erro":"☁ Salvar"}
-              </button>
-              <button onClick={restoreFromDrive} disabled={gdriveStatus==="connecting"} style={{
-                background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",
-                borderRadius:8,padding:"4px 10px",color:"#555",
-                fontSize:10,fontWeight:600,cursor:"pointer",
+            <div style={{display:"flex",gap:4,alignItems:"center"}}>
+              {gdriveStatus==="connecting"&&<span style={{fontSize:10,color:"#555"}}>⏳</span>}
+              {gdriveStatus==="synced"&&<span style={{fontSize:10,color:"#4ade80"}}>✓ Sync</span>}
+              {gdriveStatus==="error"&&<span style={{fontSize:10,color:"#f87171",cursor:"pointer"}} onClick={backupToDrive}>↻ Retry</span>}
+              <button onClick={restoreFromDrive} title="Carregar dados de outro dispositivo" style={{
+                background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",
+                borderRadius:8,padding:"3px 8px",color:"#333",
+                fontSize:10,cursor:"pointer",
               }}>⬇</button>
             </div>
             <div style={{width:6,height:6,borderRadius:"50%",background:saving?"#fbbf24":"#4ade80",transition:"background .3s"}}/>
