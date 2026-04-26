@@ -1159,8 +1159,9 @@ function InvestView({month,setMonth}) {
 }
 
 
-function AnáliseView({month, mesKey}) {
+function AnáliseView({month, mesKey, setMonth}) {
   const [catSel, setCatSel] = useState(null);
+  const [visao, setVisao] = useState("mes"); // "mes" | "anual"
   const [allMonths, setAllMonths] = useState({});
   const [loadingHistory, setLoadingHistory] = useState(true);
 
@@ -1170,29 +1171,41 @@ function AnáliseView({month, mesKey}) {
     "Empresa":"#818cf8","Casa":"#a78bfa","Apps":"#22d3ee",
     "Lazer":"#fbbf24","Compras":"#e879f9","Pet":"#86efac",
     "Família/Presentes":"#f9a8d4","Impostos":"#6b7280",
-    "Educação":"#34d399","Viagem":"#38bdf8","Outro":"#475569",
-    "Saúde":"#4ade80",
+    "Educação":"#34d399","Viagem":"#38bdf8","Outro":"#475569","Saúde":"#4ade80",
   };
 
-  // Carrega os últimos 6 meses do storage
+  const TAGS = [
+    {id:"indispensavel", label:"✓ Indispensável", color:"#4ade80", bg:"rgba(74,222,128,.12)"},
+    {id:"evitavel",      label:"✗ Evitável",      color:"#f87171", bg:"rgba(239,68,68,.12)"},
+    {id:"indefinido",    label:"? Indefinido",    color:"#fbbf24", bg:"rgba(251,191,36,.12)"},
+  ];
+
   useEffect(()=>{
     const [y,m] = mesKey.split("-").map(Number);
     const keys = [];
-    for(let i=0;i<6;i++){
+    for(let i=0;i<12;i++){
       const d = new Date(y, m-1-i, 1);
       keys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
     }
     Promise.all(keys.map(k=>load(`month:${k}`).then(d=>({k,d})))).then(results=>{
       const map = {};
       results.forEach(({k,d})=>{ if(d) map[k]=d; });
-      // inclui o mês atual (já em memória)
       map[mesKey] = month;
       setAllMonths(map);
       setLoadingHistory(false);
     });
   },[mesKey]);
 
-  // Agrega gastos do mês atual por categoria
+  // Atualiza tag de um lançamento
+  const setTag = (lancId, tag) => {
+    const novoCartoes = {};
+    for(const [k,arr] of Object.entries(month.cartoes||{})) {
+      novoCartoes[k] = arr.map(t => t.id===lancId ? {...t, tag} : t);
+    }
+    const novasVar = (month.variaveis||[]).map(t => t.id===lancId ? {...t, tag} : t);
+    setMonth({...month, cartoes:novoCartoes, variaveis:novasVar});
+  };
+
   const todosAtual = [
     ...Object.values(month.cartoes||{}).flat(),
     ...(month.variaveis||[]),
@@ -1202,7 +1215,6 @@ function AnáliseView({month, mesKey}) {
   const sortedAtual = Object.entries(catTotaisAtual).sort((a,b)=>b[1]-a[1]);
   const grandTotal = sortedAtual.reduce((s,[,v])=>s+v, 0);
 
-  // Totais do mês
   const fixT  = (month.fixas||[]).reduce((s,f)=>s+Number(f.valor||0),0);
   const carT  = Object.values(month.cartoes||{}).flat().reduce((s,t)=>s+Number(t.valor||0),0);
   const varT  = (month.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
@@ -1212,244 +1224,19 @@ function AnáliseView({month, mesKey}) {
   const totalDesp = fixT+carT+varT;
   const saldo = recT - totalDesp;
 
-  // Dados históricos: últimos 6 meses ordenados do mais antigo para o mais recente
-  const mesesOrdenados = Object.keys(allMonths).sort();
-  const mesesLabel = mesesOrdenados.map(k=>{
-    const [y,m]=k.split("-");
-    return `${MESES[+m-1]}/${String(y).slice(-2)}`;
-  });
+  // Economia potencial (evitáveis)
+  const evitavel = todosAtual.filter(t=>t.tag==="evitavel").reduce((s,t)=>s+Number(t.valor||0),0);
+  const semTag = todosAtual.filter(t=>!t.tag).length;
 
-  // Para o gráfico comparativo: gastos de catSel por mês
-  const dadosHistorico = mesesOrdenados.map(k=>{
-    const md = allMonths[k];
-    if(!md) return 0;
-    const todos=[...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])];
-    if(!catSel) {
-      // sem categoria selecionada: total geral de despesas variáveis
-      return todos.reduce((s,t)=>s+Number(t.valor||0),0);
-    }
-    return todos.filter(t=>t.cat===catSel).reduce((s,t)=>s+Number(t.valor||0),0);
-  });
-  const maxHistorico = Math.max(...dadosHistorico, 1);
+  // Lançamentos da categoria selecionada
+  const lancCatSel = catSel ? todosAtual.filter(t=>t.cat===catSel).sort((a,b)=>Number(b.valor||0)-Number(a.valor||0)) : [];
 
-  // Todas as categorias que aparecem em algum mês
-  const todasCats = new Set();
-  Object.values(allMonths).forEach(md=>{
-    [...Object.values(md?.cartoes||{}).flat(),...(md?.variaveis||[])].forEach(t=>{ if(t.cat) todasCats.add(t.cat); });
-  });
-  const catsDisponiveis = ["(Total)",...Array.from(todasCats).sort()];
-
-  const mesLabelAtual = mesLabel(mesKey);
-
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
-
-      {/* Balanço resumido */}
-      <Card style={{padding:"12px"}}>
-        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>
-          Balanço — {mesLabelAtual}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
-          {[["Receita",recT,"#4ade80"],["Despesas",totalDesp,"#f87171"],["Saldo",saldo,saldo>=0?"#4ade80":"#f87171"]].map(([l,v,cor])=>(
-            <div key={l} style={{textAlign:"center",background:"rgba(255,255,255,.03)",borderRadius:10,padding:"8px 4px"}}>
-              <div style={{fontSize:9,color:"#444",textTransform:"uppercase",letterSpacing:.6}}>{l}</div>
-              <div className="mono" style={{fontSize:13,fontWeight:600,color:cor,marginTop:3}}>{fmtBRL(v)}</div>
-            </div>
-          ))}
-        </div>
-        {recT>0&&(
-          <>
-            <div style={{height:5,borderRadius:3,background:"rgba(255,255,255,.06)",overflow:"hidden"}}>
-              <div style={{height:"100%",width:`${Math.min(totalDesp/recT*100,100)}%`,background:saldo>=0?"#f97316":"#f87171",borderRadius:3}}/>
-            </div>
-            <div style={{fontSize:10,color:"#444",marginTop:4,textAlign:"right"}}>
-              {(totalDesp/recT*100).toFixed(0)}% da receita comprometida
-            </div>
-          </>
-        )}
-      </Card>
-
-      {/* ── GRÁFICO 1: Barras horizontais por categoria (mês atual) ── */}
-      {sortedAtual.length>0&&(
-        <Card>
-          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
-            Gastos por categoria — {mesLabelAtual}
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {sortedAtual.map(([cat,val])=>{
-              const pct = grandTotal>0?(val/grandTotal*100):0;
-              const cor = CORES_CAT[cat]||"#7c6af7";
-              const isSelected = catSel===cat;
-              return (
-                <div key={cat} onClick={()=>setCatSel(isSelected?null:cat)}
-                  style={{cursor:"pointer",padding:"6px 8px",borderRadius:10,
-                    background:isSelected?`${cor}14`:"transparent",
-                    border:isSelected?`1px solid ${cor}33`:"1px solid transparent",
-                    transition:"all .2s"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-                    <div style={{display:"flex",alignItems:"center",gap:7}}>
-                      <div style={{width:9,height:9,borderRadius:3,background:cor,flexShrink:0}}/>
-                      <span style={{fontSize:12,color:isSelected?cor:"#ccc",fontWeight:isSelected?600:400}}>{cat}</span>
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{fontSize:10,color:"#444"}}>{pct.toFixed(1)}%</span>
-                      <span className="mono" style={{fontSize:12,color:cor,fontWeight:600,minWidth:72,textAlign:"right"}}>{fmtBRL(val)}</span>
-                    </div>
-                  </div>
-                  <div style={{height:5,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden"}}>
-                    <div style={{height:"100%",width:`${pct}%`,background:cor,borderRadius:3,transition:"width .5s"}}/>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {catSel&&(
-            <div style={{marginTop:10,fontSize:11,color:"#555",textAlign:"center"}}>
-              Toque na categoria para ver o comparativo mensal ↓
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* ── GRÁFICO 2: Comparativo mensal por categoria ── */}
-      <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>
-            Comparativo — últimos 6 meses
-          </div>
-          <select value={catSel||"(Total)"} onChange={e=>setCatSel(e.target.value==="(Total)"?null:e.target.value)}
-            style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",borderRadius:8,
-              padding:"5px 10px",color:"#a89cf7",fontSize:11,fontWeight:600,outline:"none",cursor:"pointer"}}>
-            {catsDisponiveis.map(c=><option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-
-        {loadingHistory?(
-          <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Carregando histórico…</div>
-        ):(
-          <>
-            {/* Barras verticais */}
-            <div style={{display:"flex",alignItems:"flex-end",gap:6,height:130,padding:"0 4px"}}>
-              {mesesOrdenados.map((k,i)=>{
-                const val = dadosHistorico[i];
-                const pct = maxHistorico>0?(val/maxHistorico*100):0;
-                const isCur = k===mesKey;
-                const cor = catSel?(CORES_CAT[catSel]||"#7c6af7"):"#7c6af7";
-                return (
-                  <div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                    <span className="mono" style={{fontSize:8,color:val>0?cor:"#2a2a35",textAlign:"center",lineHeight:1.2}}>
-                      {val>0?`R$${(val/1000).toFixed(1)}k`:"—"}
-                    </span>
-                    <div style={{width:"100%",position:"relative",height:100}}>
-                      <div style={{position:"absolute",bottom:0,left:0,right:0,
-                        height:`${pct}%`,minHeight:val>0?4:0,
-                        background:isCur?cor:`${cor}66`,
-                        borderRadius:"4px 4px 0 0",transition:"height .5s",
-                        border:isCur?`1px solid ${cor}`:"none",
-                      }}/>
-                    </div>
-                    <span style={{fontSize:9,color:isCur?"#f0f0f5":"#444",fontWeight:isCur?600:400,textAlign:"center"}}>
-                      {mesesLabel[i]}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Legenda */}
-            <div style={{marginTop:12,padding:"8px 10px",background:"rgba(255,255,255,.03)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:11,color:"#555"}}>
-                {catSel?`${catSel} — mês atual`:"Total variável — mês atual"}
-              </span>
-              <span className="mono" style={{fontSize:13,color:catSel?(CORES_CAT[catSel]||"#7c6af7"):"#7c6af7",fontWeight:600}}>
-                {fmtBRL(dadosHistorico[dadosHistorico.length-1]||0)}
-              </span>
-            </div>
-
-            {/* Comparativo com mês anterior */}
-            {dadosHistorico.length>=2&&(()=>{
-              const cur  = dadosHistorico[dadosHistorico.length-1];
-              const prev = dadosHistorico[dadosHistorico.length-2];
-              if(!prev||!cur) return null;
-              const diff = cur-prev;
-              const pct  = prev>0?((diff/prev)*100):0;
-              return (
-                <div style={{marginTop:6,padding:"6px 10px",background:diff<=0?"rgba(74,222,128,.06)":"rgba(239,68,68,.06)",
-                  borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontSize:11,color:"#555"}}>vs mês anterior</span>
-                  <span className="mono" style={{fontSize:12,color:diff<=0?"#4ade80":"#f87171",fontWeight:600}}>
-                    {diff>0?"+":""}{fmtBRL(diff)} ({pct>0?"+":""}{pct.toFixed(0)}%)
-                  </span>
-                </div>
-              );
-            })()}
-          </>
-        )}
-      </Card>
-
-      {/* Top lançamentos do mês */}
-      {todosAtual.length>0&&(
-        <Card>
-          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>
-            Maiores gastos — {mesLabelAtual}
-          </div>
-          {[...todosAtual].sort((a,b)=>Number(b.valor||0)-Number(a.valor||0)).slice(0,8).map((t,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-              padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,.04)"}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:12,color:"#f0f0f5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
-                  <div style={{width:6,height:6,borderRadius:2,background:CORES_CAT[t.cat]||"#555",flexShrink:0}}/>
-                  <span style={{fontSize:10,color:"#444"}}>{t.cat}{t.parcela?` · ${t.parcela}`:""}</span>
-                </div>
-              </div>
-              <span className="mono" style={{fontSize:13,color:"#f87171",fontWeight:500,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
-            </div>
-          ))}
-        </Card>
-      )}
-
-    </div>
-  );
-}
-
-
-function AnaliseAnualView() {
-  const [allMonths, setAllMonths] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [catSel, setCatSel] = useState(null);
-
-  const CORES = {
-    "Mercado":"#4ade80","Comer fora":"#f97316","Delivery":"#fb923c",
-    "Carro":"#94a3b8","Uber":"#64748b","Farmácia":"#f87171",
-    "Empresa":"#818cf8","Casa":"#a78bfa","Apps":"#22d3ee",
-    "Lazer":"#fbbf24","Compras":"#e879f9","Pet":"#86efac",
-    "Família/Presentes":"#f9a8d4","Impostos":"#6b7280",
-    "Educação":"#34d399","Viagem":"#38bdf8","Saúde":"#4ade80","Outro":"#475569",
-  };
-
-  useEffect(()=>{
-    const cur = curMes();
-    const [y,m] = cur.split("-").map(Number);
-    const keys = [];
-    for(let i=11;i>=0;i--){
-      const d=new Date(y,m-1-i,1);
-      keys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
-    }
-    Promise.all(keys.map(k=>load(`month:${k}`).then(d=>({k,d})))).then(results=>{
-      const map={};
-      results.forEach(({k,d})=>{ if(d) map[k]=d; });
-      setAllMonths(map);
-      setLoading(false);
-    });
-  },[]);
-
+  // Anual
   const mesesOrdenados = Object.keys(allMonths).sort();
   const mesesLabel2 = mesesOrdenados.map(k=>{
     const [y,m]=k.split("-");
     return `${MESES[+m-1]}/${String(y).slice(-2)}`;
   });
-
   const getRecT = md => {
     if(!md) return 0;
     return (md.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0)
@@ -1458,80 +1245,247 @@ function AnaliseAnualView() {
   };
   const getDespT = md => {
     if(!md) return 0;
-    const fixT=(md.fixas||[]).reduce((s,f)=>s+Number(f.valor||0),0);
-    const carT=Object.values(md.cartoes||{}).flat().reduce((s,t)=>s+Number(t.valor||0),0);
-    const varT=(md.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
-    return fixT+carT+varT;
+    return (md.fixas||[]).reduce((s,f)=>s+Number(f.valor||0),0)
+      + Object.values(md.cartoes||{}).flat().reduce((s,t)=>s+Number(t.valor||0),0)
+      + (md.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
   };
-  const getCatTotal = (md,cat) => {
-    if(!md) return 0;
-    const todos=[...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])];
-    return todos.filter(t=>t.cat===cat).reduce((s,t)=>s+Number(t.valor||0),0);
-  };
-
-  // All categories across all months
-  const todasCats = new Set();
-  Object.values(allMonths).forEach(md=>{
-    [...Object.values(md?.cartoes||{}).flat(),...(md?.variaveis||[])].forEach(t=>{ if(t.cat) todasCats.add(t.cat); });
-  });
-  const catsLista = Array.from(todasCats).sort();
-
   const receitasMeses = mesesOrdenados.map(k=>getRecT(allMonths[k]));
   const despesasMeses = mesesOrdenados.map(k=>getDespT(allMonths[k]));
   const saldosMeses   = mesesOrdenados.map((k,i)=>receitasMeses[i]-despesasMeses[i]);
   const maxBar = Math.max(...receitasMeses,...despesasMeses,1);
 
-  const catDados = catSel ? mesesOrdenados.map(k=>getCatTotal(allMonths[k],catSel)) : [];
+  const todasCatsAnual = new Set();
+  Object.values(allMonths).forEach(md=>{
+    [...Object.values(md?.cartoes||{}).flat(),...(md?.variaveis||[])].forEach(t=>{ if(t.cat) todasCatsAnual.add(t.cat); });
+  });
+  const [catAnual, setCatAnual] = useState(null);
+  const catDados = catAnual ? mesesOrdenados.map(k=>{
+    const md=allMonths[k]; if(!md) return 0;
+    return [...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===catAnual).reduce((s,t)=>s+Number(t.valor||0),0);
+  }) : [];
   const maxCat = Math.max(...catDados,1);
 
-  if(loading) return <div style={{textAlign:"center",padding:"60px 0",color:"#333",fontSize:12}}>Carregando histórico…</div>;
-  if(!mesesOrdenados.length) return <div style={{textAlign:"center",padding:"60px 0",color:"#333",fontSize:12}}>Nenhum dado encontrado ainda</div>;
+  const mesLabelAtual = mesLabel(mesKey);
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
 
-      {/* Receita vs Despesa por mês */}
-      <Card>
-        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
-          Receita vs Despesa — 12 meses
-        </div>
-        <div style={{display:"flex",alignItems:"flex-end",gap:4,height:120}}>
-          {mesesOrdenados.map((k,i)=>{
-            const rec=receitasMeses[i], desp=despesasMeses[i];
-            const isCur=k===curMes();
-            return (
-              <div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <div style={{width:"100%",display:"flex",gap:1,alignItems:"flex-end",height:100}}>
-                  <div style={{flex:1,background:"#4ade8088",borderRadius:"3px 3px 0 0",height:`${rec/maxBar*100}%`,minHeight:rec>0?2:0}}/>
-                  <div style={{flex:1,background:"#f8717188",borderRadius:"3px 3px 0 0",height:`${desp/maxBar*100}%`,minHeight:desp>0?2:0}}/>
-                </div>
-                <span style={{fontSize:8,color:isCur?"#f0f0f5":"#444",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
-              </div>
-            );
-          })}
-        </div>
-        <div style={{display:"flex",gap:12,marginTop:8,justifyContent:"center"}}>
-          {[["#4ade80","Receita"],["#f87171","Despesa"]].map(([c,l])=>(
-            <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
-              <div style={{width:8,height:8,borderRadius:2,background:c}}/>
-              <span style={{fontSize:10,color:"#555"}}>{l}</span>
-            </div>
-          ))}
-        </div>
-      </Card>
+      {/* Toggle Mês / Anual */}
+      <div style={{display:"flex",gap:4,background:"rgba(255,255,255,.04)",borderRadius:12,padding:4}}>
+        {[["mes","📅 Mês"],["anual","📊 Anual"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setVisao(v)} style={{
+            flex:1,padding:"8px",borderRadius:9,border:"none",
+            background:visao===v?"rgba(124,106,247,.3)":"transparent",
+            color:visao===v?"#a89cf7":"#444",fontSize:13,fontWeight:600,cursor:"pointer"
+          }}>{l}</button>
+        ))}
+      </div>
 
-      {/* Saldo mensal */}
-      <Card>
-        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
-          Saldo mensal
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {visao==="mes"&&<>
+        {/* Balanço */}
+        <Card style={{padding:"12px"}}>
+          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>
+            Balanço — {mesLabelAtual}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
+            {[["Receita",recT,"#4ade80"],["Despesas",totalDesp,"#f87171"],["Saldo",saldo,saldo>=0?"#4ade80":"#f87171"]].map(([l,v,cor])=>(
+              <div key={l} style={{textAlign:"center",background:"rgba(255,255,255,.03)",borderRadius:10,padding:"8px 4px"}}>
+                <div style={{fontSize:9,color:"#444",textTransform:"uppercase",letterSpacing:.6}}>{l}</div>
+                <div className="mono" style={{fontSize:13,fontWeight:600,color:cor,marginTop:3}}>{fmtBRL(v)}</div>
+              </div>
+            ))}
+          </div>
+          {recT>0&&(
+            <>
+              <div style={{height:5,borderRadius:3,background:"rgba(255,255,255,.06)",overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${Math.min(totalDesp/recT*100,100)}%`,background:saldo>=0?"#f97316":"#f87171",borderRadius:3}}/>
+              </div>
+              <div style={{fontSize:10,color:"#444",marginTop:4,textAlign:"right"}}>
+                {(totalDesp/recT*100).toFixed(0)}% da receita comprometida
+              </div>
+            </>
+          )}
+        </Card>
+
+        {/* Economia potencial */}
+        {(evitavel>0||semTag>0)&&(
+          <Card style={{borderColor:"rgba(251,191,36,.2)"}}>
+            <div style={{fontSize:10,color:"#fbbf24",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>
+              💡 Análise de gastos
+            </div>
+            {evitavel>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:12,color:"#888"}}>Gastos evitáveis</span>
+                <span className="mono" style={{fontSize:14,color:"#f87171",fontWeight:700}}>{fmtBRL(evitavel)}</span>
+              </div>
+            )}
+            {semTag>0&&(
+              <div style={{fontSize:11,color:"#555"}}>
+                {semTag} lançamento(s) ainda sem classificação — toque numa categoria abaixo para classificar
+              </div>
+            )}
+            {evitavel>0&&recT>0&&(
+              <div style={{marginTop:6,padding:"6px 10px",background:"rgba(74,222,128,.06)",borderRadius:8,fontSize:11,color:"#4ade80"}}>
+                Sem os gastos evitáveis, seu saldo seria {fmtBRL(saldo+evitavel)}
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Categorias */}
+        {sortedAtual.length>0&&(
+          <Card>
+            <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
+              Gastos por categoria — {mesLabelAtual}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {sortedAtual.map(([cat,val])=>{
+                const pct = grandTotal>0?(val/grandTotal*100):0;
+                const cor = CORES_CAT[cat]||"#7c6af7";
+                const isSelected = catSel===cat;
+                return (
+                  <div key={cat} onClick={()=>setCatSel(isSelected?null:cat)}
+                    style={{cursor:"pointer",padding:"6px 8px",borderRadius:10,
+                      background:isSelected?`${cor}14`:"transparent",
+                      border:isSelected?`1px solid ${cor}33`:"1px solid transparent",
+                      transition:"all .2s"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                      <div style={{display:"flex",alignItems:"center",gap:7}}>
+                        <div style={{width:9,height:9,borderRadius:3,background:cor,flexShrink:0}}/>
+                        <span style={{fontSize:12,color:isSelected?cor:"#ccc",fontWeight:isSelected?600:400}}>{cat}</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:10,color:"#444"}}>{pct.toFixed(1)}%</span>
+                        <span className="mono" style={{fontSize:12,color:cor,fontWeight:600,minWidth:72,textAlign:"right"}}>{fmtBRL(val)}</span>
+                      </div>
+                    </div>
+                    <div style={{height:5,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${pct}%`,background:cor,borderRadius:3,transition:"width .5s"}}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+
+        {/* Lista de lançamentos da categoria selecionada */}
+        {catSel&&lancCatSel.length>0&&(
+          <Card style={{borderColor:`${CORES_CAT[catSel]||"#7c6af7"}33`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontSize:11,color:CORES_CAT[catSel]||"#7c6af7",fontWeight:600,textTransform:"uppercase",letterSpacing:.6}}>
+                {catSel}
+              </div>
+              <span className="mono" style={{fontSize:12,color:CORES_CAT[catSel]||"#7c6af7",fontWeight:700}}>
+                {fmtBRL(lancCatSel.reduce((s,t)=>s+Number(t.valor||0),0))}
+              </span>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {lancCatSel.map((t,i)=>{
+                const tagAtual = TAGS.find(tg=>tg.id===t.tag);
+                return (
+                  <div key={t.id||i} style={{padding:"8px 10px",background:"rgba(255,255,255,.03)",borderRadius:10,
+                    borderLeft:`3px solid ${tagAtual?.color||"rgba(255,255,255,.1)"}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,color:"#f0f0f5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
+                        <div style={{fontSize:10,color:"#444",marginTop:2}}>{t.data}{t.parcela?` · ${t.parcela}`:""}</div>
+                      </div>
+                      <span className="mono" style={{fontSize:13,color:"#f87171",fontWeight:600,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
+                    </div>
+                    {/* Tags */}
+                    <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                      {TAGS.map(tg=>(
+                        <button key={tg.id} onClick={e=>{e.stopPropagation();setTag(t.id, t.tag===tg.id?null:tg.id);}}
+                          style={{padding:"3px 8px",borderRadius:8,border:`1px solid ${t.tag===tg.id?tg.color:"rgba(255,255,255,.08)"}`,
+                            background:t.tag===tg.id?tg.bg:"transparent",
+                            color:t.tag===tg.id?tg.color:"#444",fontSize:10,fontWeight:600,cursor:"pointer"}}>
+                          {tg.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+
+        {/* Top gastos */}
+        {todosAtual.length>0&&(
+          <Card>
+            <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>
+              Maiores gastos — {mesLabelAtual}
+            </div>
+            {[...todosAtual].sort((a,b)=>Number(b.valor||0)-Number(a.valor||0)).slice(0,8).map((t,i)=>{
+              const tagAtual = TAGS.find(tg=>tg.id===t.tag);
+              return (
+                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                  padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,.04)"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,color:"#f0f0f5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
+                      <div style={{width:6,height:6,borderRadius:2,background:CORES_CAT[t.cat]||"#555",flexShrink:0}}/>
+                      <span style={{fontSize:10,color:"#444"}}>{t.cat}</span>
+                      {tagAtual&&<span style={{fontSize:9,color:tagAtual.color,background:tagAtual.bg,padding:"1px 5px",borderRadius:4}}>{tagAtual.label}</span>}
+                    </div>
+                  </div>
+                  <span className="mono" style={{fontSize:13,color:"#f87171",fontWeight:500,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
+                </div>
+              );
+            })}
+          </Card>
+        )}
+      </>}
+
+      {visao==="anual"&&<>
+        {/* Receita vs Despesa */}
+        <Card>
+          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
+            Receita vs Despesa — 12 meses
+          </div>
+          {loadingHistory?(
+            <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Carregando…</div>
+          ):(
+            <>
+              <div style={{display:"flex",alignItems:"flex-end",gap:4,height:120}}>
+                {mesesOrdenados.map((k,i)=>{
+                  const rec=receitasMeses[i], desp=despesasMeses[i];
+                  const isCur=k===mesKey;
+                  return (
+                    <div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <div style={{width:"100%",display:"flex",gap:1,alignItems:"flex-end",height:100}}>
+                        <div style={{flex:1,background:"#4ade8088",borderRadius:"3px 3px 0 0",height:`${rec/maxBar*100}%`,minHeight:rec>0?2:0}}/>
+                        <div style={{flex:1,background:"#f8717188",borderRadius:"3px 3px 0 0",height:`${desp/maxBar*100}%`,minHeight:desp>0?2:0}}/>
+                      </div>
+                      <span style={{fontSize:8,color:isCur?"#f0f0f5":"#444",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{display:"flex",gap:12,marginTop:8,justifyContent:"center"}}>
+                {[["#4ade80","Receita"],["#f87171","Despesa"]].map(([cor,l])=>(
+                  <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
+                    <div style={{width:8,height:8,borderRadius:2,background:cor}}/>
+                    <span style={{fontSize:10,color:"#555"}}>{l}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </Card>
+
+        {/* Saldo mensal */}
+        <Card>
+          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
+            Saldo mensal
+          </div>
           {mesesOrdenados.map((k,i)=>{
-            const saldo=saldosMeses[i];
-            const isCur=k===curMes();
+            const saldoM=saldosMeses[i];
+            const isCur=k===mesKey;
             return (
               <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                padding:"6px 10px",borderRadius:8,
+                padding:"6px 10px",borderRadius:8,marginBottom:4,
                 background:isCur?"rgba(255,255,255,.05)":"transparent",
                 border:isCur?"1px solid rgba(255,255,255,.08)":"1px solid transparent"}}>
                 <span style={{fontSize:12,color:isCur?"#f0f0f5":"#666",fontWeight:isCur?600:400}}>{mesesLabel2[i]}</span>
@@ -1540,88 +1494,89 @@ function AnaliseAnualView() {
                   <span style={{fontSize:10,color:"#333"}}>–</span>
                   <span className="mono" style={{fontSize:10,color:"#555"}}>{fmtBRL(despesasMeses[i])}</span>
                   <span style={{fontSize:10,color:"#333"}}>=</span>
-                  <span className="mono" style={{fontSize:12,color:saldo>=0?"#4ade80":"#f87171",fontWeight:600}}>{fmtBRL(saldo)}</span>
+                  <span className="mono" style={{fontSize:12,color:saldoM>=0?"#4ade80":"#f87171",fontWeight:600}}>{fmtBRL(saldoM)}</span>
                 </div>
               </div>
             );
           })}
-        </div>
-      </Card>
+        </Card>
 
-      {/* Categorias por mês */}
-      <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>
-            Categoria por mês
+        {/* Categoria por mês */}
+        <Card>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>
+              Categoria por mês
+            </div>
+            <select value={catAnual||""} onChange={e=>setCatAnual(e.target.value||null)}
+              style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",borderRadius:8,
+                padding:"5px 10px",color:"#a89cf7",fontSize:11,fontWeight:600,outline:"none",cursor:"pointer"}}>
+              <option value="">Selecionar</option>
+              {Array.from(todasCatsAnual).sort().map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
-          <select value={catSel||""} onChange={e=>setCatSel(e.target.value||null)}
-            style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",borderRadius:8,
-              padding:"5px 10px",color:"#a89cf7",fontSize:11,fontWeight:600,outline:"none",cursor:"pointer"}}>
-            <option value="">Selecionar categoria</option>
-            {catsLista.map(c=><option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        {catSel?(
-          <>
-            <div style={{display:"flex",alignItems:"flex-end",gap:4,height:110}}>
-              {mesesOrdenados.map((k,i)=>{
-                const val=catDados[i];
-                const isCur=k===curMes();
-                const cor=CORES[catSel]||"#7c6af7";
-                return (
-                  <div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                    {val>0&&<span className="mono" style={{fontSize:7,color:cor}}>
-                      {val>=1000?`${(val/1000).toFixed(1)}k`:val.toFixed(0)}
-                    </span>}
-                    <div style={{width:"100%",height:80,display:"flex",alignItems:"flex-end"}}>
-                      <div style={{width:"100%",background:isCur?cor:`${cor}66`,borderRadius:"3px 3px 0 0",
-                        height:`${val/maxCat*100}%`,minHeight:val>0?2:0,
-                        border:isCur?`1px solid ${cor}`:"none"}}/>
+          {catAnual&&(
+            <>
+              <div style={{display:"flex",alignItems:"flex-end",gap:4,height:110}}>
+                {mesesOrdenados.map((k,i)=>{
+                  const val=catDados[i];
+                  const isCur=k===mesKey;
+                  const cor=CORES_CAT[catAnual]||"#7c6af7";
+                  return (
+                    <div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      {val>0&&<span className="mono" style={{fontSize:7,color:cor}}>{val>=1000?`${(val/1000).toFixed(1)}k`:val.toFixed(0)}</span>}
+                      <div style={{width:"100%",height:80,display:"flex",alignItems:"flex-end"}}>
+                        <div style={{width:"100%",background:isCur?cor:`${cor}66`,borderRadius:"3px 3px 0 0",
+                          height:`${val/maxCat*100}%`,minHeight:val>0?2:0}}/>
+                      </div>
+                      <span style={{fontSize:8,color:isCur?"#f0f0f5":"#444",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
                     </div>
-                    <span style={{fontSize:8,color:isCur?"#f0f0f5":"#444",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{marginTop:10,padding:"8px 10px",background:"rgba(255,255,255,.03)",borderRadius:8,display:"flex",justifyContent:"space-between"}}>
-              <span style={{fontSize:11,color:"#555"}}>{catSel} — média mensal</span>
-              <span className="mono" style={{fontSize:12,color:CORES[catSel]||"#7c6af7",fontWeight:600}}>
-                {fmtBRL(catDados.filter(v=>v>0).reduce((s,v,_,a)=>s+v/a.length,0))}
-              </span>
-            </div>
-          </>
-        ):(
-          <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>
-            Selecione uma categoria para comparar nos meses
-          </div>
-        )}
-      </Card>
+                  );
+                })}
+              </div>
+              <div style={{marginTop:10,padding:"8px 10px",background:"rgba(255,255,255,.03)",borderRadius:8,display:"flex",justifyContent:"space-between"}}>
+                <span style={{fontSize:11,color:"#555"}}>{catAnual} — média</span>
+                <span className="mono" style={{fontSize:12,color:CORES_CAT[catAnual]||"#7c6af7",fontWeight:600}}>
+                  {fmtBRL(catDados.filter(v=>v>0).reduce((s,v,_,a)=>s+v/a.length,0))}
+                </span>
+              </div>
+            </>
+          )}
+          {!catAnual&&<div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Selecione uma categoria</div>}
+        </Card>
 
-      {/* Ranking categorias no período */}
-      <Card>
-        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
-          Total por categoria — período completo
-        </div>
-        {catsLista.map(cat=>{
-          const total=mesesOrdenados.reduce((s,k)=>s+getCatTotal(allMonths[k],cat),0);
-          const cor=CORES[cat]||"#7c6af7";
-          const maxTotal=Math.max(...catsLista.map(c=>mesesOrdenados.reduce((s,k)=>s+getCatTotal(allMonths[k],c),0)),1);
-          return (
-            <div key={cat} style={{marginBottom:10,cursor:"pointer"}} onClick={()=>setCatSel(cat===catSel?null:cat)}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <div style={{width:8,height:8,borderRadius:2,background:cor,flexShrink:0}}/>
-                  <span style={{fontSize:12,color:catSel===cat?cor:"#ccc",fontWeight:catSel===cat?600:400}}>{cat}</span>
+        {/* Ranking */}
+        <Card>
+          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
+            Total por categoria — período
+          </div>
+          {Array.from(todasCatsAnual).sort().map(cat=>{
+            const total=mesesOrdenados.reduce((s,k)=>{
+              const md=allMonths[k]; if(!md) return s;
+              return s+[...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===cat).reduce((ss,t)=>ss+Number(t.valor||0),0);
+            },0);
+            const cor=CORES_CAT[cat]||"#7c6af7";
+            const maxTotal=Math.max(...Array.from(todasCatsAnual).map(c=>mesesOrdenados.reduce((s,k)=>{
+              const md=allMonths[k]; if(!md) return s;
+              return s+[...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===c).reduce((ss,t)=>ss+Number(t.valor||0),0);
+            },0)),1);
+            return (
+              <div key={cat} style={{marginBottom:10,cursor:"pointer"}} onClick={()=>{setCatAnual(cat===catAnual?null:cat);}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <div style={{width:8,height:8,borderRadius:2,background:cor,flexShrink:0}}/>
+                    <span style={{fontSize:12,color:catAnual===cat?cor:"#ccc",fontWeight:catAnual===cat?600:400}}>{cat}</span>
+                  </div>
+                  <span className="mono" style={{fontSize:11,color:cor}}>{fmtBRL(total)}</span>
                 </div>
-                <span className="mono" style={{fontSize:11,color:cor}}>{fmtBRL(total)}</span>
+                <div style={{height:3,background:"rgba(255,255,255,.05)",borderRadius:2}}>
+                  <div style={{height:"100%",width:`${total/maxTotal*100}%`,background:cor,borderRadius:2}}/>
+                </div>
               </div>
-              <div style={{height:3,background:"rgba(255,255,255,.05)",borderRadius:2}}>
-                <div style={{height:"100%",width:`${total/maxTotal*100}%`,background:cor,borderRadius:2}}/>
-              </div>
-            </div>
-          );
-        })}
-      </Card>
+            );
+          })}
+        </Card>
+      </>}
+
     </div>
   );
 }
@@ -1693,7 +1648,7 @@ function ConfigView({cats,setCats}) {
 }
 
 
-const NAV=[{id:"dashboard",label:"Início"},{id:"plantoes",label:"Receita"},{id:"fixas",label:"Fixas"},{id:"cartoes",label:"Cartões"},{id:"variaveis",label:"Variáveis"},{id:"investimentos",label:"Invest."},{id:"analise",label:"Análise"},{id:"anual",label:"Anual"},{id:"config",label:"Config"}];
+const NAV=[{id:"dashboard",label:"Início"},{id:"plantoes",label:"Receita"},{id:"fixas",label:"Fixas"},{id:"cartoes",label:"Cartões"},{id:"variaveis",label:"Variáveis"},{id:"investimentos",label:"Invest."},{id:"analise",label:"Análise"},{id:"config",label:"Config"}];
 
 export default function App() {
   const [mesKey,setMesKeyRaw]=useState(curMes());
@@ -1935,8 +1890,7 @@ export default function App() {
             :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw}/>
             :view==="variaveis"?<PixView month={month} setMonth={setMonthRaw}/>
             :view==="investimentos"?<InvestView month={month} setMonth={setMonthRaw}/>
-            :view==="analise"?<AnáliseView month={month} mesKey={mesKey}/>
-            :view==="anual"?<AnaliseAnualView/>
+            :view==="analise"?<AnáliseView month={month} mesKey={mesKey} setMonth={setMonth}/>
             :view==="config"?<ConfigView cats={cats} setCats={setCats}/>
             :null}
         </div>
