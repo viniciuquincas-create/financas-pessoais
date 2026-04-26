@@ -1890,7 +1890,7 @@ export default function App() {
             :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw}/>
             :view==="variaveis"?<PixView month={month} setMonth={setMonthRaw}/>
             :view==="investimentos"?<InvestView month={month} setMonth={setMonthRaw}/>
-            :view==="analise"?<AnáliseView month={month} mesKey={mesKey} setMonth={setMonth}/>
+            :view==="analise"?<AnáliseView month={month} mesKey={mesKey} setMonth={setMonthRaw}/>
             :view==="config"?<ConfigView cats={cats} setCats={setCats}/>
             :null}
         </div>
