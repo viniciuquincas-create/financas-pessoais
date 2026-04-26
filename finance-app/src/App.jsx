@@ -1164,6 +1164,7 @@ function AnáliseView({month, mesKey, setMonth}) {
   const [visao, setVisao] = useState("mes"); // "mes" | "anual"
   const [allMonths, setAllMonths] = useState({});
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [catAnual, setCatAnual] = useState(null);
 
   const CORES_CAT = {
     "Mercado":"#4ade80","Comer fora":"#f97316","Delivery":"#fb923c",
@@ -1258,7 +1259,6 @@ function AnáliseView({month, mesKey, setMonth}) {
   Object.values(allMonths).forEach(md=>{
     [...Object.values(md?.cartoes||{}).flat(),...(md?.variaveis||[])].forEach(t=>{ if(t.cat) todasCatsAnual.add(t.cat); });
   });
-  const [catAnual, setCatAnual] = useState(null);
   const catDados = catAnual ? mesesOrdenados.map(k=>{
     const md=allMonths[k]; if(!md) return 0;
     return [...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===catAnual).reduce((s,t)=>s+Number(t.valor||0),0);
