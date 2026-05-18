@@ -31,38 +31,99 @@ function calcMonth(md) {
   return {rec,desp,saldo:rec-desp-investido,fixas,cartoes,variaveis,investido,plantaoT};
 }
 
-function buildPrompt(data, meses) {
-  const curKey = meses[meses.length-1];
+// Pega o mês mais recente COM dados reais (rec > 0 ou desp > 0)
+function findCurKey(normalized, meses) {
+  for (let i = meses.length - 1; i >= 0; i--) {
+    const n = calcMonth(normalized[meses[i]]);
+    if (n.rec > 0 || n.desp > 0) return meses[i];
+  }
+  return meses[meses.length - 1];
+}
+
+function buildPrompt(data, meses, curKey) {
   const cur = data[curKey];
   if (!cur) return null;
   const nums = calcMonth(cur);
+
+  // Categorias completas
   const catMap = {};
   [...Object.values(cur?.cartoes||{}).flat(),...(cur?.variaveis||[])].forEach(t=>{
     catMap[t.cat]=(catMap[t.cat]||0)+Number(t.valor||0);
   });
-  const topCats = Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const history = meses.slice(-6).map(k=>{
+  const topCats = Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  // Histórico só com meses com dados
+  const mesesComDados = meses.filter(k=>{ const n=calcMonth(data[k]); return n.rec>0||n.desp>0; });
+  const history = mesesComDados.slice(-6).map(k=>{
     const n=calcMonth(data[k]);
     return `${mesLabel(k)}: receita=${fmtBRL(n.rec)} despesas=${fmtBRL(n.desp)} saldo=${fmtBRL(n.saldo)}`;
   }).join("\n");
+
+  // Plantões
   const plantoes = (cur?.plantoes||[]).filter(p=>p.ativo!==false&&p.horas>0)
-    .map(p=>`${p.local}: ${p.n} plantões, ${p.horas}h × ${fmtBRL(p.valorH)} = ${fmtBRL(p.horas*p.valorH)}`).join("\n")||"Nenhum";
-  const fixas = (cur?.fixas||[]).filter(f=>Number(f.valor)>0)
-    .map(f=>`${f.nome}: ${fmtBRL(f.valor)} [${f.status}]`).join("\n")||"Nenhuma";
+    .map(p=>`${p.local}: ${p.n} plantões, ${p.horas}h × ${fmtBRL(p.valorH)}/h = ${fmtBRL(p.horas*p.valorH)}`).join("\n")||"Nenhum";
 
-  return `Você é consultor financeiro de Vinicius: médico R1 medicina intensiva UNIFESP São Paulo. Foco em carreira assistencial + gestão + patrimônio. Direto, específico, use valores reais.
+  // Fixas detalhadas
+  const fixasDetalhadas = (cur?.fixas||[]).filter(f=>Number(f.valor)>0)
+    .sort((a,b)=>Number(b.valor)-Number(a.valor))
+    .map(f=>`${f.nome} (${f.cat}): ${fmtBRL(f.valor)} [${f.status}]`).join("\n")||"Nenhuma registrada";
 
-MÊS: ${mesLabel(curKey)} | Receita: ${fmtBRL(nums.rec)} | Despesas: ${fmtBRL(nums.desp)} | Saldo: ${fmtBRL(nums.saldo)}
-Fixas: ${fmtBRL(nums.fixas)} | Cartões: ${fmtBRL(nums.cartoes)} | Variáveis: ${fmtBRL(nums.variaveis)} | Investido: ${fmtBRL(nums.investido)}
-Comprometimento: ${nums.rec>0?((nums.desp/nums.rec)*100).toFixed(0):0}%
+  // Cartões detalhados
+  const cartoesDetalhados = Object.entries(cur?.cartoes||{}).map(([card, items])=>{
+    if(!items.length) return null;
+    const total = items.reduce((s,t)=>s+Number(t.valor||0),0);
+    return `${card}: ${fmtBRL(total)} (${items.length} lançamentos)`;
+  }).filter(Boolean).join("\n")||"Nenhum";
+
+  // Variáveis detalhadas
+  const variaveisDetalhadas = (cur?.variaveis||[]).length > 0
+    ? (cur.variaveis).sort((a,b)=>Number(b.valor)-Number(a.valor)).slice(0,8)
+        .map(p=>`${p.desc} (${p.cat}): ${fmtBRL(p.valor)}`).join("\n")
+    : "Nenhuma registrada";
+
+  // Média histórica
+  const mediaRec = mesesComDados.length > 0
+    ? mesesComDados.reduce((s,k)=>s+calcMonth(data[k]).rec,0)/mesesComDados.length : 0;
+  const mediaDesp = mesesComDados.length > 0
+    ? mesesComDados.reduce((s,k)=>s+calcMonth(data[k]).desp,0)/mesesComDados.length : 0;
+
+  return `Você é consultor financeiro pessoal de Vinicius: médico R1 medicina intensiva UNIFESP São Paulo. Foco em carreira assistencial + gestão hospitalar + construção de patrimônio. Seja direto, específico, use valores reais. Janeiro/2026 iniciou residência.
+
+=== MÊS ATUAL: ${mesLabel(curKey)} ===
+Receita: ${fmtBRL(nums.rec)} | Plantões: ${fmtBRL(nums.plantaoT)} | Bolsa+Aux: ${fmtBRL(Number(cur?.bolsa||0)+Number(cur?.auxilio||0))}
+Despesas: ${fmtBRL(nums.desp)} | Fixas: ${fmtBRL(nums.fixas)} | Cartões: ${fmtBRL(nums.cartoes)} | Variáveis/Pix: ${fmtBRL(nums.variaveis)}
+Investido: ${fmtBRL(nums.investido)} | Saldo livre: ${fmtBRL(nums.saldo)}
+Comprometimento: ${nums.rec>0?((nums.desp/nums.rec)*100).toFixed(1):0}% da receita
 
 PLANTÕES: ${plantoes}
-TOP CATS: ${topCats.map(([c,v])=>`${c}:${fmtBRL(v)}`).join(" | ")||"Sem dados"}
-FIXAS: ${fixas}
-HISTÓRICO: ${history||"Primeiro mês"}
 
-Retorne SOMENTE JSON válido sem markdown:
-{"score":<0-100>,"scoreLabel":"Crítico|Preocupante|Regular|Bom|Excelente","tendencia":"melhorando|estável|piorando","resumo":"2-3 frases com valores reais","alertas":["até 4 alertas"],"positivos":["até 3 pontos"],"acoes":["3-5 ações com valores"],"comentario_plantoes":"análise objetiva","comentario_fixas":"análise para R1"}`;
+DESPESAS FIXAS (detalhado): ${fixasDetalhadas}
+
+CARTÕES: ${cartoesDetalhados}
+
+VARIÁVEIS/PIX: ${variaveisDetalhadas}
+
+TOP CATEGORIAS: ${topCats.map(([c,v])=>`${c}: ${fmtBRL(v)}`).join(" | ")||"Sem dados"}
+
+=== HISTÓRICO (${mesesComDados.length} meses com dados) ===
+${history}
+Média receita: ${fmtBRL(mediaRec)} | Média despesas: ${fmtBRL(mediaDesp)} | Média saldo: ${fmtBRL(mediaRec-mediaDesp)}
+
+Faça análise completa e retorne SOMENTE JSON válido sem markdown:
+{
+  "score": <0-100>,
+  "scoreLabel": "Crítico|Preocupante|Regular|Bom|Excelente",
+  "tendencia": "melhorando|estável|piorando",
+  "resumo": "2-3 frases diretas com valores reais",
+  "alertas": ["até 4 alertas concretos com valores"],
+  "positivos": ["até 3 pontos positivos concretos"],
+  "acoes": ["3-5 ações prioritárias com valores e prazos"],
+  "comentario_plantoes": "análise objetiva dos plantões e otimização de receita",
+  "comentario_fixas": "análise detalhada de cada despesa fixa — o que está alto, o que cortar, o que é razoável para R1 SP",
+  "estrategia_despesas": "estratégia concreta de redução de despesas com valores e prioridades",
+  "projecao_6m": "projeção financeira 6 meses com cenário conservador e otimista em valores reais",
+  "meta_patrimonio": "quanto pode acumular em 2 anos de residência restantes com a renda atual"
+}`;
 }
 
 export default async function handler(req, res) {
@@ -72,7 +133,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
-    // 1. Busca Supabase
+    // 1. Supabase
     const sbRes = await fetch(
       `${SUPABASE_URL}/rest/v1/financas?id=eq.vinicius&select=dados`,
       { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
@@ -85,8 +146,12 @@ export default async function handler(req, res) {
     const meses = Object.keys(normalized).sort();
     if (!meses.length) return res.status(404).json({ error: "Nenhum mês encontrado" });
 
-    // 3. Claude
-    const prompt = buildPrompt(normalized, meses);
+    // 3. Mês correto — último com dados reais
+    const curKey = findCurKey(normalized, meses);
+    const mesesComDados = meses.filter(k=>{ const n=calcMonth(normalized[k]); return n.rec>0||n.desp>0; });
+
+    // 4. Claude
+    const prompt = buildPrompt(normalized, meses, curKey);
     const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -105,13 +170,24 @@ export default async function handler(req, res) {
     const txt = aiData.content?.map(b=>b.text||"").join("")||"";
     const analysis = JSON.parse(txt.replace(/```json|```/g,"").trim());
 
-    const curKey = meses[meses.length-1];
+    const nums = calcMonth(normalized[curKey]);
+    const cur = normalized[curKey];
+
+    // Retorna dados enriquecidos
     res.status(200).json({
       analysis,
-      nums: calcMonth(normalized[curKey]),
-      meses,
+      nums,
+      meses: mesesComDados,
       curKey,
-      saldos: meses.map(k=>({ k, saldo: calcMonth(normalized[k]).saldo })),
+      saldos: mesesComDados.map(k=>({ k, saldo: calcMonth(normalized[k]).saldo })),
+      fixasDetalhadas: (cur?.fixas||[]).filter(f=>Number(f.valor)>0)
+        .sort((a,b)=>Number(b.valor)-Number(a.valor))
+        .map(f=>({ nome:f.nome, cat:f.cat, valor:Number(f.valor), status:f.status })),
+      catMap: (() => {
+        const m={};
+        [...Object.values(cur?.cartoes||{}).flat(),...(cur?.variaveis||[])].forEach(t=>{m[t.cat]=(m[t.cat]||0)+Number(t.valor||0);});
+        return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+      })(),
     });
 
   } catch(e) {
