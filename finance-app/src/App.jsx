@@ -813,7 +813,7 @@ Retorne SOMENTE o array JSON.`;
       const novos=data.lancamentos.map(l=>({...l,id:Date.now()+Math.random(),valor:Number(l.valor||0)}));
       setMonth({...month,cartoes:{...month.cartoes,[cartaoAlvo]:[...(month.cartoes[cartaoAlvo]||[]),...novos]}});
       if(cartaoAlvo!==activeCard) setActiveCard(cartaoAlvo);
-      setImportMsg({ok:true,txt:`✓ ${novos.length} lançamentos importados para ${CARD_LABELS[cartaoAlvo]||cartaoAlvo} · R$ ${data.total?.toFixed(2)||""}`});
+      setImportMsg({ok:true,txt:`✓ ${novos.length} lançamentos importados para ${CARDS.find(c=>c.id===cartaoAlvo)?.label||cartaoAlvo} · R$ ${data.total?.toFixed(2)||""}`});
       setImportJson(""); setShowImport(false);
     }catch(e){
       setImportMsg({ok:false,txt:"Erro: "+e.message});
