@@ -41,14 +41,14 @@ const CATS_DEFAULT = ["Mercado","Comer fora","Delivery","Carro","Uber","Farmáci
 // CATS will be loaded dynamically; this is the fallback
 let CATS = [...CATS_DEFAULT];
 
-// DEPOIS:
-const ALL_CARDS = [
+const CARDS = [
   { id:"inter", label:"Inter",             color:"#E05A00", bg:"#FFF0E6", emoji:"🟠" },
   { id:"itau",  label:"Itaú Personnalité", color:"#0D2B6E", bg:"#E8EDF7", emoji:"🔵" },
   { id:"will",  label:"Will",              color:"#B8860B", bg:"#FFFBE6", emoji:"🟡", ate:"2026-04" },
   { id:"xp",    label:"XP",               color:"#1A1A1A", bg:"#F0F0F0", emoji:"⚫", desde:"2026-05" },
 ];
-const getCards = (mesKey) => ALL_CARDS.filter(c => {
+
+const getCards = (mesKey) => CARDS.filter(c => {
   if(c.ate && mesKey > c.ate) return false;
   if(c.desde && mesKey < c.desde) return false;
   return true;
@@ -699,7 +699,7 @@ function FixasView({month,setMonth}) {
   );
 }
 
-function CartoesView({month,setMonth}) {
+function CartoesView({month, setMonth, mesKey}) {
   const [activeCard,setActiveCard]=useState("inter");
   const [showForm,setShowForm]=useState(false);
   const [showImport,setShowImport]=useState(false);
@@ -1896,7 +1896,7 @@ export default function App() {
             :view==="dashboard"?<Dashboard month={month} setView={setView}/>
             :view==="plantoes"?<PlantoesView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="fixas"?<FixasView month={month} setMonth={setMonthRaw}/>
-            :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw}/>
+            :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="variaveis"?<PixView month={month} setMonth={setMonthRaw}/>
             :view==="investimentos"?<InvestView month={month} setMonth={setMonthRaw}/>
             :view==="analise"?<AnáliseView month={month} mesKey={mesKey} setMonth={setMonthRaw}/>
