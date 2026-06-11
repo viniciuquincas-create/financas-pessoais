@@ -40,12 +40,6 @@ async function supabaseSave(dados) {
 const CATS_DEFAULT = ["Mercado","Comer fora","Delivery","Carro","Uber","Farmácia","Empresa","Casa","Apps","Lazer","Compras","Pet","Família/Presentes","Impostos","Educação","Viagem","Saúde","Outro"];
 // CATS will be loaded dynamically; this is the fallback
 let CATS = [...CATS_DEFAULT];
-// ANTES:
-const CARDS = [
-  { id:"inter", label:"Inter",             color:"#E05A00", bg:"#FFF0E6", emoji:"🟠" },
-  { id:"itau",  label:"Itaú Personnalité", color:"#0D2B6E", bg:"#E8EDF7", emoji:"🔵" },
-  { id:"will",  label:"Will",              color:"#B8860B", bg:"#FFFBE6", emoji:"🟡" },
-];
 
 // DEPOIS:
 const ALL_CARDS = [
