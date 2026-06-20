@@ -1722,19 +1722,29 @@ export default function App() {
     });
     setView("dashboard");
   },[mesKey]);
-  useEffect(()=>{
+useEffect(()=>{
     if(!month) return;
     setSaving(true);
     const t=setTimeout(async()=>{
       await save(storageKey,month);
-      // Auto-sync to Supabase (debounced 3s)
+      // Auto-sync to Supabase (debounced 3s) — com merge seguro pra não sobrescrever dados melhores no servidor
       try {
         const allKeys = Object.keys(localStorage).filter(k=>k.startsWith("month:"));
         const localData = {};
         for(const key of allKeys) {
           try { localData[key] = JSON.parse(localStorage.getItem(key)); } catch {}
         }
-        await supabaseSave(localData);
+        const remoteData = await supabaseLoad();
+        const merged = { ...(remoteData||{}) };
+        for(const [key, localVal] of Object.entries(localData)) {
+          const remoteVal = merged[key];
+          if(!remoteVal) {
+            merged[key] = localVal;
+          } else {
+            merged[key] = countData(localVal) >= countData(remoteVal) ? localVal : remoteVal;
+          }
+        }
+        await supabaseSave(merged);
       } catch(e) { console.warn("Auto-sync failed:", e); }
       setSaving(false);
     }, 3000);
