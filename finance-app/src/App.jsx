@@ -163,7 +163,7 @@ function Dashboard({month,setView}) {
   const despT=fixT+carT+pixT;
   const fixPend=month.fixas.filter(f=>f.status==="pendente"&&Number(f.valor)>0).length;
   const catMap={};
-  [...Object.values(month.cartoes).flat(),...(month.variaveis||[])].forEach(t=>{ catMap[t.cat]=(catMap[t.cat]||0)+Number(t.valor||0); });
+  [...Object.values(month.cartoes).flat(),...(month.variaveis||[]),...month.fixas.filter(f=>Number(f.valor)>0)].forEach(t=>{ catMap[t.cat]=(catMap[t.cat]||0)+Number(t.valor||0); });
   const topCats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const agendaOk=(month.plantoes||[]).some(p=>p.fromAgenda&&p.ativo!==false);
   const recAtrasado=[
