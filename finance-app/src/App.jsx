@@ -1141,6 +1141,9 @@ const CORES_TIPO = {
 function InvestView({month,setMonth,mesKey}) {
   const [editing,setEditing]=useState(null);
   const [showAdd,setShowAdd]=useState(false);
+  const [showImport,setShowImport]=useState(false);
+  const [importJson,setImportJson]=useState("");
+  const [importMsg,setImportMsg]=useState(null);
   const [nova,setNova]=useState({produto:"",tipo:TIPOS_INVEST[0],aplicado:"",atual:""});
   const [allMonths,setAllMonths]=useState({});
   const [loadingHistory,setLoadingHistory]=useState(true);
@@ -1168,6 +1171,26 @@ function InvestView({month,setMonth,mesKey}) {
     setMonth({...month,investimentos:[...month.investimentos,{id:Date.now(),produto:nova.produto,tipo:nova.tipo,aplicado:Number(nova.aplicado)||0,atual:Number(nova.atual)||0}]});
     setNova({produto:"",tipo:TIPOS_INVEST[0],aplicado:"",atual:""});
     setShowAdd(false);
+  };
+  const doImportInvest=()=>{
+    try{
+      const data=JSON.parse(importJson);
+      const arr=Array.isArray(data)?data:data.investimentos;
+      if(!Array.isArray(arr)) throw new Error("esperado um array de ativos (ou {\"investimentos\":[...]})");
+      const novos=arr.map((a,i)=>({
+        id:Date.now()+i,
+        produto:a.produto||a.nome||"Sem nome",
+        tipo:TIPOS_INVEST.includes(a.tipo)?a.tipo:"Outro",
+        aplicado:Number(a.aplicado)||0,
+        atual:Number(a.atual)||0,
+      }));
+      setMonth({...month,investimentos:novos});
+      setImportMsg({ok:true,txt:`✓ ${novos.length} ativos importados (substituiu a carteira deste mês)`});
+      setImportJson("");
+      setShowImport(false);
+    }catch(e){
+      setImportMsg({ok:false,txt:"Erro: "+e.message});
+    }
   };
 
   const totalApl=month.investimentos.reduce((s,i)=>s+Number(i.aplicado||0),0);
@@ -1331,6 +1354,28 @@ function InvestView({month,setMonth,mesKey}) {
         <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Nenhum ativo cadastrado ainda</div>
       )}
 
+      {importMsg&&(
+        <div style={{padding:"8px 12px",borderRadius:10,background:importMsg.ok?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",fontSize:12,color:importMsg.ok?"#4ade80":"#f87171",border:`1px solid ${importMsg.ok?"rgba(74,222,128,.2)":"rgba(239,68,68,.2)"}`}}>
+          {importMsg.txt}
+        </div>
+      )}
+
+      {showImport&&(
+        <Card style={{borderColor:"rgba(255,255,255,.1)"}}>
+          <div style={{fontSize:12,color:"#888",fontWeight:600,marginBottom:8}}>Importar carteira via JSON</div>
+          <div style={{fontSize:11,color:"#555",marginBottom:8,lineHeight:1.6}}>
+            Cole um array de ativos: {`[{"produto":"...","tipo":"Renda Fixa","aplicado":0,"atual":0}, ...]`}. Isso substitui a carteira deste mês.
+          </div>
+          <textarea value={importJson} onChange={e=>setImportJson(e.target.value)}
+            placeholder='[{"produto":"CDB PICPAY","tipo":"Renda Fixa","aplicado":6010.09,"atual":6055.77}]'
+            style={{width:"100%",minHeight:100,background:"rgba(0,0,0,.4)",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,padding:10,color:"#f0f0f5",fontSize:10,outline:"none",resize:"vertical",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5}}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
+            <button onClick={()=>{setShowImport(false);setImportJson("");}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"#555",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+            <button onClick={doImportInvest} style={{padding:"10px",borderRadius:10,border:"none",background:"#555",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Importar</button>
+          </div>
+        </Card>
+      )}
+
       {showAdd?(
         <Card style={{borderColor:"rgba(167,139,250,.2)"}}>
           <div style={{fontSize:12,color:"#a78bfa",fontWeight:600,marginBottom:10}}>+ Novo ativo</div>
@@ -1348,9 +1393,14 @@ function InvestView({month,setMonth,mesKey}) {
           </div>
         </Card>
       ):(
-        <button onClick={()=>setShowAdd(true)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(167,139,250,.3)",background:"transparent",color:"#a78bfa",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-          + Adicionar ativo
-        </button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>setShowAdd(true)} style={{flex:1,padding:"12px",borderRadius:12,border:"1px dashed rgba(167,139,250,.3)",background:"transparent",color:"#a78bfa",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+            + Adicionar ativo
+          </button>
+          <button onClick={()=>setShowImport(true)} style={{padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"#888",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+            📋 JSON
+          </button>
+        </div>
       )}
       <div style={{fontSize:10,color:"#2a2a35",textAlign:"center"}}>Os ativos passam automaticamente pro mês seguinte com os mesmos valores — só atualize o que mudou</div>
     </div>
