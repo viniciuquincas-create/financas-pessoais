@@ -76,6 +76,7 @@ const fmtBRL = v => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BR
 const today  = () => new Date().toISOString().split("T")[0];
 const curMes = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 const mesLabel = k => { const[y,m]=k.split("-"); return `${MESES[+m-1].toUpperCase()} / ${y}`; };
+const prevMesKey = k => { const[y,m]=k.split("-").map(Number); const d=new Date(y,m-2,1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 
 const load = async (key,fb=null) => { try{ const r=await window.storage.get(key); return r?JSON.parse(r.value):fb; }catch{ return fb; }};
 const save = async (key,val)     => { try{ await window.storage.set(key,JSON.stringify(val)); }catch{} };
@@ -1131,11 +1132,64 @@ Retorne SOMENTE o array JSON.`;
   );
 }
 
-function InvestView({month,setMonth}) {
-  const upd=(id,f,v)=>setMonth({...month,investimentos:month.investimentos.map(i=>i.id===id?{...i,[f]:Number(v)||0}:i)});
+const TIPOS_INVEST = ["Renda Fixa","Fundo","Ações","FIIs","Cripto","Previdência","Internacional","Outro"];
+const CORES_TIPO = {
+  "Renda Fixa":"#4ade80","Fundo":"#818cf8","Ações":"#f97316","FIIs":"#fbbf24",
+  "Cripto":"#e879f9","Previdência":"#22d3ee","Internacional":"#38bdf8","Outro":"#94a3b8",
+};
+
+function InvestView({month,setMonth,mesKey}) {
+  const [editing,setEditing]=useState(null);
+  const [showAdd,setShowAdd]=useState(false);
+  const [nova,setNova]=useState({produto:"",tipo:TIPOS_INVEST[0],aplicado:"",atual:""});
+  const [allMonths,setAllMonths]=useState({});
+  const [loadingHistory,setLoadingHistory]=useState(true);
+
+  useEffect(()=>{
+    const [y,m]=mesKey.split("-").map(Number);
+    const keys=[];
+    for(let i=0;i<12;i++){
+      const d=new Date(y,m-1-i,1);
+      keys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+    }
+    Promise.all(keys.map(k=>load(`month:${k}`).then(d=>({k,d})))).then(results=>{
+      const map={};
+      results.forEach(({k,d})=>{ if(d) map[k]=d; });
+      map[mesKey]=month;
+      setAllMonths(map);
+      setLoadingHistory(false);
+    });
+  },[mesKey]);
+
+  const upd=(id,f,v)=>setMonth({...month,investimentos:month.investimentos.map(i=>i.id===id?{...i,[f]:(f==="aplicado"||f==="atual")?Number(v)||0:v}:i)});
+  const remove=id=>setMonth({...month,investimentos:month.investimentos.filter(i=>i.id!==id)});
+  const addInv=()=>{
+    if(!nova.produto) return;
+    setMonth({...month,investimentos:[...month.investimentos,{id:Date.now(),produto:nova.produto,tipo:nova.tipo,aplicado:Number(nova.aplicado)||0,atual:Number(nova.atual)||0}]});
+    setNova({produto:"",tipo:TIPOS_INVEST[0],aplicado:"",atual:""});
+    setShowAdd(false);
+  };
+
   const totalApl=month.investimentos.reduce((s,i)=>s+Number(i.aplicado||0),0);
   const totalAtu=month.investimentos.reduce((s,i)=>s+Number(i.atual||0),0);
   const rend=totalAtu-totalApl;
+  const rendPct=totalApl>0?(rend/totalApl*100):0;
+
+  // Alocação por tipo
+  const porTipo={};
+  month.investimentos.forEach(i=>{ porTipo[i.tipo]=(porTipo[i.tipo]||0)+Number(i.atual||0); });
+  const alocacao=Object.entries(porTipo).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+
+  // Histórico — 12 meses
+  const mesesOrdenados=Object.keys(allMonths).sort();
+  const mesesLabel2=mesesOrdenados.map(k=>{ const[y,m]=k.split("-"); return `${MESES[+m-1]}/${String(y).slice(-2)}`; });
+  const getAtuT=md=>(md?.investimentos||[]).reduce((s,i)=>s+Number(i.atual||0),0);
+  const getAplT=md=>(md?.investimentos||[]).reduce((s,i)=>s+Number(i.aplicado||0),0);
+  const atuMeses=mesesOrdenados.map(k=>getAtuT(allMonths[k]));
+  const aplMeses=mesesOrdenados.map(k=>getAplT(allMonths[k]));
+  const maxHist=Math.max(...atuMeses,...aplMeses,1);
+  const mesesComDado=mesesOrdenados.filter((k,i)=>atuMeses[i]>0||aplMeses[i]>0).length;
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -1143,26 +1197,162 @@ function InvestView({month,setMonth}) {
           <div style={{fontSize:10,color:"#666"}}>Total Aplicado</div>
           <div className="mono" style={{fontSize:18,color:"#a78bfa",fontWeight:600}}>{fmtBRL(totalApl)}</div>
         </Card>
-        <Card style={{background:rend>=0?"rgba(74,222,128,.05)":"rgba(239,68,68,.05)",borderColor:rend>=0?"rgba(74,222,128,.15)":"rgba(239,68,68,.15)"}}>
-          <div style={{fontSize:10,color:"#666"}}>Rendimento Mês</div>
-          <div className="mono" style={{fontSize:18,color:rend>=0?"#4ade80":"#f87171",fontWeight:600}}>{fmtBRL(rend)}</div>
+        <Card style={{background:"rgba(129,140,248,.05)",borderColor:"rgba(129,140,248,.15)"}}>
+          <div style={{fontSize:10,color:"#666"}}>Valor Atual</div>
+          <div className="mono" style={{fontSize:18,color:"#818cf8",fontWeight:600}}>{fmtBRL(totalAtu)}</div>
         </Card>
       </div>
-      {month.investimentos.map(inv=>(
-        <Card key={inv.id}>
-          <div style={{fontSize:13,fontWeight:600,color:"#a78bfa",marginBottom:8}}>{inv.produto}<span style={{fontSize:10,color:"#444",fontWeight:400,marginLeft:6}}>{inv.tipo}</span></div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <Inp label="Valor Aplicado" type="number" value={inv.aplicado||""} onChange={v=>upd(inv.id,"aplicado",v)} placeholder="0,00"/>
-            <Inp label="Valor Atual" type="number" value={inv.atual||""} onChange={v=>upd(inv.id,"atual",v)} placeholder="0,00"/>
+
+      <Card style={{background:rend>=0?"rgba(74,222,128,.05)":"rgba(239,68,68,.05)",borderColor:rend>=0?"rgba(74,222,128,.15)":"rgba(239,68,68,.15)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:10,color:"#666"}}>Rendimento total</div>
+            <div className="mono" style={{fontSize:20,color:rend>=0?"#4ade80":"#f87171",fontWeight:700}}>{fmtBRL(rend)}</div>
           </div>
-          {inv.aplicado>0&&(
-            <div style={{marginTop:8,padding:"7px 10px",borderRadius:8,background:inv.atual>=inv.aplicado?"rgba(74,222,128,.07)":"rgba(239,68,68,.07)",display:"flex",justifyContent:"space-between"}}>
-              <span style={{fontSize:12,color:"#555"}}>Rendimento</span>
-              <span className="mono" style={{fontSize:13,fontWeight:600,color:inv.atual>=inv.aplicado?"#4ade80":"#f87171"}}>{fmtBRL(inv.atual-inv.aplicado)} ({((inv.atual-inv.aplicado)/inv.aplicado*100).toFixed(1)}%)</span>
+          {totalApl>0&&(
+            <div style={{fontSize:15,fontWeight:700,color:rend>=0?"#4ade80":"#f87171",background:rend>=0?"rgba(74,222,128,.12)":"rgba(239,68,68,.12)",padding:"6px 12px",borderRadius:10}}>
+              {rendPct>=0?"+":""}{rendPct.toFixed(1)}%
             </div>
           )}
+        </div>
+      </Card>
+
+      {/* Alocação por tipo */}
+      {alocacao.length>1&&(
+        <Card>
+          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
+            Alocação por tipo
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {alocacao.map(([tipo,val])=>{
+              const pct=totalAtu>0?(val/totalAtu*100):0;
+              const cor=CORES_TIPO[tipo]||"#7c6af7";
+              return (
+                <div key={tipo}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      <div style={{width:9,height:9,borderRadius:3,background:cor,flexShrink:0}}/>
+                      <span style={{fontSize:12,color:"#ccc"}}>{tipo}</span>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:10,color:"#444"}}>{pct.toFixed(1)}%</span>
+                      <span className="mono" style={{fontSize:12,color:cor,fontWeight:600,minWidth:72,textAlign:"right"}}>{fmtBRL(val)}</span>
+                    </div>
+                  </div>
+                  <div style={{height:5,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${pct}%`,background:cor,borderRadius:3,transition:"width .5s"}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
-      ))}
+      )}
+
+      {/* Evolução mensal */}
+      <Card>
+        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
+          Evolução — 12 meses
+        </div>
+        {loadingHistory?(
+          <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Carregando…</div>
+        ):mesesComDado<2?(
+          <div style={{textAlign:"center",padding:"12px 0",color:"#333",fontSize:11}}>Ainda não há histórico suficiente</div>
+        ):(
+          <>
+            <div style={{display:"flex",alignItems:"flex-end",gap:4,height:120}}>
+              {mesesOrdenados.map((k,i)=>{
+                const isCur=k===mesKey;
+                return (
+                  <div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                    <div style={{width:"100%",display:"flex",gap:1,alignItems:"flex-end",height:100}}>
+                      <div style={{flex:1,background:"#818cf888",borderRadius:"3px 3px 0 0",height:`${aplMeses[i]/maxHist*100}%`,minHeight:aplMeses[i]>0?2:0}}/>
+                      <div style={{flex:1,background:"#a78bfa88",borderRadius:"3px 3px 0 0",height:`${atuMeses[i]/maxHist*100}%`,minHeight:atuMeses[i]>0?2:0}}/>
+                    </div>
+                    <span style={{fontSize:8,color:isCur?"#f0f0f5":"#444",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{display:"flex",gap:12,marginTop:8,justifyContent:"center"}}>
+              {[["#818cf8","Aplicado"],["#a78bfa","Valor atual"]].map(([cor,l])=>(
+                <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
+                  <div style={{width:8,height:8,borderRadius:2,background:cor}}/>
+                  <span style={{fontSize:10,color:"#555"}}>{l}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* Lista de ativos */}
+      <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,padding:"4px 0 2px"}}>
+        Ativos
+      </div>
+      {month.investimentos.map(inv=>{
+        const isOpen=editing===inv.id;
+        const rendInv=Number(inv.atual||0)-Number(inv.aplicado||0);
+        const cor=CORES_TIPO[inv.tipo]||"#a78bfa";
+        return (
+          <Card key={inv.id}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:cor}}>{inv.produto||"Sem nome"}</div>
+                <div style={{fontSize:10,color:"#444",marginTop:1}}>{inv.tipo}</div>
+              </div>
+              <button onClick={()=>setEditing(isOpen?null:inv.id)} style={{background:"transparent",border:"1px solid rgba(255,255,255,.06)",borderRadius:8,padding:"4px 10px",color:"#444",fontSize:11,cursor:"pointer",flexShrink:0}}>
+                {isOpen?"▲":"editar"}
+              </button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
+              <Inp label="Valor Aplicado" type="number" value={inv.aplicado||""} onChange={v=>upd(inv.id,"aplicado",v)} placeholder="0,00"/>
+              <Inp label="Valor Atual" type="number" value={inv.atual||""} onChange={v=>upd(inv.id,"atual",v)} placeholder="0,00"/>
+            </div>
+            {inv.aplicado>0&&(
+              <div style={{marginTop:8,padding:"7px 10px",borderRadius:8,background:inv.atual>=inv.aplicado?"rgba(74,222,128,.07)":"rgba(239,68,68,.07)",display:"flex",justifyContent:"space-between"}}>
+                <span style={{fontSize:12,color:"#555"}}>Rendimento</span>
+                <span className="mono" style={{fontSize:13,fontWeight:600,color:inv.atual>=inv.aplicado?"#4ade80":"#f87171"}}>{fmtBRL(rendInv)} ({(rendInv/inv.aplicado*100).toFixed(1)}%)</span>
+              </div>
+            )}
+            {isOpen&&(
+              <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+                <Inp label="Nome do ativo" value={inv.produto||""} onChange={v=>upd(inv.id,"produto",v)} placeholder="Ex: Tesouro Selic 2029"/>
+                <Sel label="Tipo" value={inv.tipo} onChange={v=>upd(inv.id,"tipo",v)} options={TIPOS_INVEST}/>
+                <button onClick={()=>remove(inv.id)} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:8,padding:"6px",color:"#f87171",fontSize:12,cursor:"pointer"}}>
+                  Remover ativo
+                </button>
+              </div>
+            )}
+          </Card>
+        );
+      })}
+      {!month.investimentos.length&&(
+        <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Nenhum ativo cadastrado ainda</div>
+      )}
+
+      {showAdd?(
+        <Card style={{borderColor:"rgba(167,139,250,.2)"}}>
+          <div style={{fontSize:12,color:"#a78bfa",fontWeight:600,marginBottom:10}}>+ Novo ativo</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <Inp label="Nome do ativo" value={nova.produto} onChange={v=>setNova({...nova,produto:v})} placeholder="Ex: Tesouro Selic 2029"/>
+            <Sel label="Tipo" value={nova.tipo} onChange={v=>setNova({...nova,tipo:v})} options={TIPOS_INVEST}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <Inp label="Valor Aplicado" type="number" value={nova.aplicado} onChange={v=>setNova({...nova,aplicado:v})} placeholder="0,00"/>
+              <Inp label="Valor Atual" type="number" value={nova.atual} onChange={v=>setNova({...nova,atual:v})} placeholder="0,00"/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
+              <Btn outline color="#555" onClick={()=>setShowAdd(false)}>Cancelar</Btn>
+              <Btn color="#a78bfa" onClick={addInv}>Adicionar</Btn>
+            </div>
+          </div>
+        </Card>
+      ):(
+        <button onClick={()=>setShowAdd(true)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(167,139,250,.3)",background:"transparent",color:"#a78bfa",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+          + Adicionar ativo
+        </button>
+      )}
+      <div style={{fontSize:10,color:"#2a2a35",textAlign:"center"}}>Os ativos passam automaticamente pro mês seguinte com os mesmos valores — só atualize o que mudou</div>
     </div>
   );
 }
@@ -1693,8 +1883,18 @@ export default function App() {
 
   useEffect(()=>{
     setMonthRaw(null);
-    load(storageKey).then(d=>{
-      if(!d){ setMonthRaw(seedMonth(mesKey)); return; }
+    load(storageKey).then(async d=>{
+      if(!d){
+        const seed=seedMonth(mesKey);
+        // Continuidade: herda a carteira de investimentos do mês anterior (se existir),
+        // pra não precisar recadastrar os ativos toda vez que o mês vira
+        try{
+          const prev=await load(`month:${prevMesKey(mesKey)}`);
+          if(prev?.investimentos?.length) seed.investimentos=prev.investimentos.map(i=>({...i}));
+        }catch{}
+        setMonthRaw(seed);
+        return;
+      }
       // Migrate: ensure all fields exist (handles old 'pix' format)
       const seed=seedMonth(mesKey);
       const migrated={
@@ -1908,7 +2108,7 @@ useEffect(()=>{
             :view==="fixas"?<FixasView month={month} setMonth={setMonthRaw}/>
             :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="variaveis"?<PixView month={month} setMonth={setMonthRaw}/>
-            :view==="investimentos"?<InvestView month={month} setMonth={setMonthRaw}/>
+            :view==="investimentos"?<InvestView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="analise"?<AnáliseView month={month} mesKey={mesKey} setMonth={setMonthRaw}/>
             :view==="config"?<ConfigView cats={cats} setCats={setCats}/>
             :null}
