@@ -1137,6 +1137,19 @@ const CORES_TIPO = {
   "Renda Fixa":"#4ade80","Fundo":"#818cf8","Ações":"#f97316","FIIs":"#fbbf24",
   "Cripto":"#e879f9","Previdência":"#22d3ee","Internacional":"#38bdf8","Outro":"#94a3b8",
 };
+// Risco estimado por tipo de ativo (1=baixo risco, 5=muito alto) — heurística simples,
+// não é uma análise de risco profissional, só uma referência dentro do app.
+const RISCO_TIPO = {
+  "Renda Fixa":   {score:1, label:"Baixo",      color:"#4ade80"},
+  "Previdência":  {score:1, label:"Baixo",      color:"#4ade80"},
+  "FIIs":         {score:3, label:"Médio",      color:"#fbbf24"},
+  "Fundo":        {score:3, label:"Médio",      color:"#fbbf24"},
+  "Outro":        {score:3, label:"Médio",      color:"#fbbf24"},
+  "Internacional":{score:4, label:"Alto",       color:"#f97316"},
+  "Ações":        {score:5, label:"Muito alto", color:"#f87171"},
+  "Cripto":       {score:5, label:"Muito alto", color:"#f87171"},
+};
+const RISCO_DEFAULT = {score:3, label:"Médio", color:"#fbbf24"};
 
 function InvestView({month,setMonth,mesKey}) {
   const [editing,setEditing]=useState(null);
@@ -1203,6 +1216,22 @@ function InvestView({month,setMonth,mesKey}) {
   month.investimentos.forEach(i=>{ porTipo[i.tipo]=(porTipo[i.tipo]||0)+Number(i.atual||0); });
   const alocacao=Object.entries(porTipo).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
 
+  // Risco da carteira — média do risco de cada tipo, ponderada pelo valor atual de cada ativo
+  const riscoScoreRaw = totalAtu>0
+    ? month.investimentos.reduce((s,i)=>s+(RISCO_TIPO[i.tipo]||RISCO_DEFAULT).score*Number(i.atual||0),0)/totalAtu
+    : 0;
+  const riscoRound = totalAtu>0 ? Math.min(5,Math.max(1,Math.round(riscoScoreRaw))) : 0;
+  const RISCO_LABELS=["","Baixo","Baixo-médio","Médio","Alto","Muito alto"];
+  const RISCO_CORES=["","#4ade80","#a3e635","#fbbf24","#f97316","#f87171"];
+  const riscoLabel = RISCO_LABELS[riscoRound]||"—";
+  const riscoCor = RISCO_CORES[riscoRound]||"#888";
+  const ativosOrdenados=[...month.investimentos].sort((a,b)=>Number(b.atual||0)-Number(a.atual||0));
+  const maiorAtivo=ativosOrdenados[0];
+  const pctMaiorAtivo=maiorAtivo&&totalAtu>0?Number(maiorAtivo.atual||0)/totalAtu*100:0;
+  const maiorTipo=alocacao[0];
+  const pctMaiorTipo=maiorTipo&&totalAtu>0?maiorTipo[1]/totalAtu*100:0;
+  const concentrado = pctMaiorAtivo>40||pctMaiorTipo>55;
+
   // Histórico — 12 meses
   const mesesOrdenados=Object.keys(allMonths).sort();
   const mesesLabel2=mesesOrdenados.map(k=>{ const[y,m]=k.split("-"); return `${MESES[+m-1]}/${String(y).slice(-2)}`; });
@@ -1212,6 +1241,23 @@ function InvestView({month,setMonth,mesKey}) {
   const aplMeses=mesesOrdenados.map(k=>getAplT(allMonths[k]));
   const maxHist=Math.max(...atuMeses,...aplMeses,1);
   const mesesComDado=mesesOrdenados.filter((k,i)=>atuMeses[i]>0||aplMeses[i]>0).length;
+
+  // Projeção — extrapola a taxa média de crescimento mensal observada no histórico
+  const idxComDado=atuMeses.map((v,i)=>v>0?i:-1).filter(i=>i>=0);
+  let projecao=null;
+  if(idxComDado.length>=2){
+    const i0=idxComDado[0], i1=idxComDado[idxComDado.length-1];
+    const n=i1-i0;
+    if(n>=1&&atuMeses[i0]>0){
+      const taxaMensal=Math.pow(atuMeses[i1]/atuMeses[i0],1/n)-1;
+      projecao={
+        meses:n,
+        taxaMensal,
+        proj6:atuMeses[i1]*Math.pow(1+taxaMensal,6),
+        proj12:atuMeses[i1]*Math.pow(1+taxaMensal,12),
+      };
+    }
+  }
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -1239,6 +1285,31 @@ function InvestView({month,setMonth,mesKey}) {
           )}
         </div>
       </Card>
+
+      {/* Risco da carteira */}
+      {month.investimentos.length>0&&totalAtu>0&&(
+        <Card>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>
+              Risco da carteira
+            </div>
+            <span style={{fontSize:12,fontWeight:700,color:riscoCor}}>{riscoLabel}</span>
+          </div>
+          <div style={{display:"flex",gap:3,marginBottom:concentrado?10:8}}>
+            {[1,2,3,4,5].map(n=>(
+              <div key={n} style={{flex:1,height:6,borderRadius:3,background:n<=riscoRound?riscoCor:"rgba(255,255,255,.06)"}}/>
+            ))}
+          </div>
+          {concentrado&&(
+            <div style={{padding:"7px 10px",borderRadius:8,background:"rgba(251,191,36,.08)",border:"1px solid rgba(251,191,36,.2)",fontSize:11,color:"#fbbf24",marginBottom:8}}>
+              ⚠ Concentração alta —{pctMaiorAtivo>40&&` ${maiorAtivo.produto} é ${pctMaiorAtivo.toFixed(0)}% da carteira`}{pctMaiorAtivo>40&&pctMaiorTipo>55?" · ":""}{pctMaiorTipo>55&&` ${maiorTipo[0]} concentra ${pctMaiorTipo.toFixed(0)}%`}
+            </div>
+          )}
+          <div style={{fontSize:9,color:"#444",lineHeight:1.6}}>
+            Estimativa por tipo de ativo (Renda Fixa/Previdência = baixo; Fundos/FIIs = médio; Internacional = alto; Ações/Cripto = muito alto), ponderada pelo valor de cada posição. Não substitui uma análise profissional.
+          </div>
+        </Card>
+      )}
 
       {/* Alocação por tipo */}
       {alocacao.length>1&&(
@@ -1309,6 +1380,37 @@ function InvestView({month,setMonth,mesKey}) {
         )}
       </Card>
 
+      {/* Projeção */}
+      <Card>
+        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
+          Projeção
+        </div>
+        {loadingHistory?(
+          <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Carregando…</div>
+        ):!projecao?(
+          <div style={{textAlign:"center",padding:"12px 0",color:"#333",fontSize:11}}>Histórico insuficiente pra projetar — precisa de pelo menos 2 meses com saldo</div>
+        ):(
+          <>
+            <div style={{fontSize:11,color:"#555",marginBottom:10}}>
+              Com base no crescimento médio dos últimos {projecao.meses} mês(es) (~{(projecao.taxaMensal*100).toFixed(2)}% ao mês):
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div style={{textAlign:"center",background:"rgba(255,255,255,.03)",borderRadius:10,padding:"10px 4px"}}>
+                <div style={{fontSize:9,color:"#444",textTransform:"uppercase",letterSpacing:.5}}>Em 6 meses</div>
+                <div className="mono" style={{fontSize:15,color:"#a78bfa",fontWeight:600,marginTop:3}}>{fmtBRL(projecao.proj6)}</div>
+              </div>
+              <div style={{textAlign:"center",background:"rgba(255,255,255,.03)",borderRadius:10,padding:"10px 4px"}}>
+                <div style={{fontSize:9,color:"#444",textTransform:"uppercase",letterSpacing:.5}}>Em 12 meses</div>
+                <div className="mono" style={{fontSize:15,color:"#a78bfa",fontWeight:600,marginTop:3}}>{fmtBRL(projecao.proj12)}</div>
+              </div>
+            </div>
+            <div style={{fontSize:9,color:"#333",marginTop:10,lineHeight:1.6}}>
+              Extrapolação simples do seu histórico dentro do app — não considera novos aportes, mudanças de mercado ou rebalanceamento. Não é recomendação de investimento.
+            </div>
+          </>
+        )}
+      </Card>
+
       {/* Lista de ativos */}
       <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,padding:"4px 0 2px"}}>
         Ativos
@@ -1322,7 +1424,12 @@ function InvestView({month,setMonth,mesKey}) {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,fontWeight:600,color:cor}}>{inv.produto||"Sem nome"}</div>
-                <div style={{fontSize:10,color:"#444",marginTop:1}}>{inv.tipo}</div>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
+                  <span style={{fontSize:10,color:"#444"}}>{inv.tipo}</span>
+                  <span style={{fontSize:9,fontWeight:600,color:(RISCO_TIPO[inv.tipo]||RISCO_DEFAULT).color,background:`${(RISCO_TIPO[inv.tipo]||RISCO_DEFAULT).color}18`,padding:"1px 6px",borderRadius:6}}>
+                    {(RISCO_TIPO[inv.tipo]||RISCO_DEFAULT).label}
+                  </span>
+                </div>
               </div>
               <button onClick={()=>setEditing(isOpen?null:inv.id)} style={{background:"transparent",border:"1px solid rgba(255,255,255,.06)",borderRadius:8,padding:"4px 10px",color:"#444",fontSize:11,cursor:"pointer",flexShrink:0}}>
                 {isOpen?"▲":"editar"}
