@@ -3,13 +3,12 @@ import { useState, useEffect, useRef } from "react";
 
 // ── Supabase Sync ─────────────────────────────────────────────
 const SUPABASE_URL = "https://jrzcbthmmkaaeyuakhsb.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpyemNidGhtbWthYWV5dWFraHNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMTM3NDEsImV4cCI6MjA5MjY4OTc0MX0.YXSdk38JHCRB7A6xxokUWlJW4Rv7yuXTlcFnP2esIxM";
+const SUPABASE_KEY = "sb_publishable_oMtzB2JdusLes2hzdJr1UA_EXdSsi8c";
 
 async function supabaseLoad() {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/financas?id=eq.vinicius&select=dados`, {
     headers: {
       "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
     }
   });
   const data = await res.json();
@@ -29,7 +28,6 @@ async function supabaseSave(dados) {
     method: "PATCH",
     headers: {
       "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json",
       "Prefer": "return=minimal",
     },

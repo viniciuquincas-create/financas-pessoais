@@ -1,7 +1,7 @@
 // api/analise.js
 
 const SUPABASE_URL = "https://jrzcbthmmkaaeyuakhsb.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpyemNidGhtbWthYWV5dWFraHNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMTM3NDEsImV4cCI6MjA5MjY4OTc0MX0.YXSdk38JHCRB7A6xxokUWlJW4Rv7yuXTlcFnP2esIxM";
+const SUPABASE_KEY = "sb_publishable_oMtzB2JdusLes2hzdJr1UA_EXdSsi8c";
 
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 const fmtBRL = v => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(v||0);
@@ -136,7 +136,7 @@ export default async function handler(req, res) {
     // 1. Supabase
     const sbRes = await fetch(
       `${SUPABASE_URL}/rest/v1/financas?id=eq.vinicius&select=dados`,
-      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+      { headers: { apikey: SUPABASE_KEY } }
     );
     const rows = await sbRes.json();
     if (!rows?.length || !rows[0]?.dados) return res.status(404).json({ error: "Sem dados no Supabase" });

@@ -2,7 +2,7 @@
 // Acesse: https://vinifinancas.vercel.app/api/financas
 
 const SUPABASE_URL = "https://jrzcbthmmkaaeyuakhsb.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpyemNidGhtbWthYWV5dWFraHNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMTM3NDEsImV4cCI6MjA5MjY4OTc0MX0.YXSdk38JHCRB7A6xxokUWlJW4Rv7yuXTlcFnP2esIxM";
+const SUPABASE_KEY = "sb_publishable_oMtzB2JdusLes2hzdJr1UA_EXdSsi8c";
 
 export default async function handler(req, res) {
   // CORS — permite acesso do Claude e de qualquer origem
@@ -18,7 +18,6 @@ export default async function handler(req, res) {
       {
         headers: {
           apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
         },
       }
     );
