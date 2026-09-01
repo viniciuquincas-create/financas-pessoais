@@ -2281,7 +2281,8 @@ useEffect(()=>{
       + (d.variaveis||[]).length
       + (d.receitasExtra||[]).length
       + (d.plantoes||[]).filter(p=>p.n>0||p.horas>0).length
-      + (d.fixas||[]).filter(f=>f.valor>0).length;
+      + (d.fixas||[]).filter(f=>f.valor>0).length
+      + (d.investimentos||[]).filter(i=>Number(i.aplicado)>0||Number(i.atual)>0).length;
   };
 
   // Salva dados locais no Supabase
