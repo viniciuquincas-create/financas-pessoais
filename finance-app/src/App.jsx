@@ -68,7 +68,10 @@ const FIXAS_BASE = [
   { nome:"Consórcio",       venc:"Dia 05", cat:"Impostos",  duracao:"sempre" },
   { nome:"FIES",            venc:"Dia 10", cat:"Educação",  duracao:"sempre" },
 ];
-const LOCAIS = ["Leonor","CDT","SEPACO"];
+const LOCAIS_DEFAULT = ["Leonor","CDT","SEPACO"];
+// LOCAIS é mutável e persistido (config:locais), assim novos locais de plantão
+// (vindos do Google Agenda ou adicionados manualmente) não exigem editar o código.
+let LOCAIS = [...LOCAIS_DEFAULT];
 const AGENDA_URL = "https://script.google.com/macros/s/AKfycbxDfXcA9Fs8KUM8yEU0cVkZXdlIQFfs0n0Q9J5NMtCtTf0u_z5mcp-nIyMM_9aSYe1txA/exec";
 const MESES  = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
@@ -277,7 +280,7 @@ function StatusBadge({value, onChange}) {
   );
 }
 
-function PlantoesView({month,setMonth,mesKey}) {
+function PlantoesView({month,setMonth,mesKey,locais,setLocais}) {
   const [showPaste,setShowPaste]=useState(false);
   const [pasteJson,setPasteJson]=useState("");
   const [syncMsg,setSyncMsg]=useState(null);
@@ -286,6 +289,8 @@ function PlantoesView({month,setMonth,mesKey}) {
   const [novaExtra,setNovaExtra]=useState({desc:"",valor:"",dia:"",status:"aguardando"});
   const [agendaLoading,setAgendaLoading]=useState(false);
   const [agendaMsg,setAgendaMsg]=useState(null);
+  const [showAddLocal,setShowAddLocal]=useState(false);
+  const [novoLocal,setNovoLocal]=useState({nome:"",valorH:"",diaReceb:""});
 
   const plantaoT=(month.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0);
   const bolsaV=Number(month.bolsa||0);
@@ -312,24 +317,53 @@ function PlantoesView({month,setMonth,mesKey}) {
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       // data format: {"plantoes":{"Leonor":{"n":9,"horas":153},...}, "periodos":{...}}
-      const plantoes = data.plantoes || {};
-      const locais = Object.keys(plantoes);
-      if(!locais.length) throw new Error("Nenhum plantão encontrado");
-      const updated = month.plantoes.map(p => {
-        const d = plantoes[p.local];
+      const plantoesApi = data.plantoes || {};
+      const locaisApi = Object.keys(plantoesApi);
+      if(!locaisApi.length) throw new Error("Nenhum plantão encontrado");
+      let updated = month.plantoes.map(p => {
+        const d = plantoesApi[p.local];
         if(!d) return p;
         // Se está fixado, nunca sobrescreve
         if(p.bloqueadoSync || p.editadoManualmente) return p;
         return {...p, n: d.n||0, horas: d.horas||0, fromAgenda:true};
       });
+      // Locais que vieram da agenda mas ainda não existem no app — adiciona automaticamente,
+      // sem precisar editar código. Valor/h fica 0 até o usuário preencher.
+      const jaExistem = new Set(updated.map(p=>p.local));
+      const locaisNovos = locaisApi.filter(l=>!jaExistem.has(l));
+      if(locaisNovos.length){
+        const novosPlantoes = locaisNovos.map(l=>({
+          local:l, n:plantoesApi[l].n||0, horas:plantoesApi[l].horas||0,
+          valorH:0, fromAgenda:true, ativo:true, diaReceb:0, statusReceb:"aguardando",
+        }));
+        updated = [...updated, ...novosPlantoes];
+        setLocais([...new Set([...locais, ...locaisNovos])]);
+      }
       setMonth({...month, plantoes: updated});
-      const resumo = locais.map(l=>`${l}: ${plantoes[l].n} plant. ${plantoes[l].horas}h`).join(" · ");
-      setAgendaMsg({ok:true, txt:`✓ Sincronizado — ${resumo}`});
+      const resumo = locaisApi.map(l=>`${l}: ${plantoesApi[l].n} plant. ${plantoesApi[l].horas}h`).join(" · ");
+      setAgendaMsg({ok:true, txt:`✓ Sincronizado — ${resumo}${locaisNovos.length?` · novo(s) local(is) adicionado(s): ${locaisNovos.join(", ")} (defina o valor/h)`:""}`});
     } catch(e) {
       setAgendaMsg({ok:false, txt:"Erro: "+e.message});
     } finally {
       setAgendaLoading(false);
     }
+  };
+
+  const addLocal=()=>{
+    const nome=novoLocal.nome.trim();
+    if(!nome||(month.plantoes||[]).some(p=>p.local===nome)) return;
+    const novo={
+      local:nome, n:0, horas:0, valorH:Number(novoLocal.valorH)||0,
+      fromAgenda:false, ativo:true, diaReceb:Number(novoLocal.diaReceb)||0, statusReceb:"aguardando",
+    };
+    setMonth({...month, plantoes:[...(month.plantoes||[]), novo]});
+    if(!locais.includes(nome)) setLocais([...locais, nome]);
+    setNovoLocal({nome:"",valorH:"",diaReceb:""});
+    setShowAddLocal(false);
+  };
+  const removeLocal=(nome)=>{
+    setMonth({...month, plantoes:(month.plantoes||[]).filter(p=>p.local!==nome)});
+    setLocais(locais.filter(l=>l!==nome));
   };
 
   const addExtra=()=>{
@@ -345,14 +379,25 @@ function PlantoesView({month,setMonth,mesKey}) {
     try {
       const data=JSON.parse(pasteJson);
       if(!data.plantoes) throw new Error("JSON inválido — campo 'plantoes' não encontrado");
-      const novos=month.plantoes.map(p=>{
-        const d=data.plantoes?.[p.local];
+      const plantoesApi=data.plantoes;
+      let novos=month.plantoes.map(p=>{
+        const d=plantoesApi[p.local];
         if(!d) return p;
         return {...p,n:d.n,horas:d.horas,fromAgenda:true};
       });
+      const jaExistem=new Set(novos.map(p=>p.local));
+      const locaisNovos=Object.keys(plantoesApi).filter(l=>!jaExistem.has(l));
+      if(locaisNovos.length){
+        const novosPlantoes=locaisNovos.map(l=>({
+          local:l, n:plantoesApi[l].n||0, horas:plantoesApi[l].horas||0,
+          valorH:0, fromAgenda:true, ativo:true, diaReceb:0, statusReceb:"aguardando",
+        }));
+        novos=[...novos,...novosPlantoes];
+        setLocais([...new Set([...locais,...locaisNovos])]);
+      }
       setMonth({...month,plantoes:novos});
       setSyncPeriodos(data.periodos||null);
-      setSyncMsg({ok:true,txt:`Importado! ${novos.filter(p=>p.fromAgenda&&p.ativo!==false).map(p=>p.local+": "+p.horas+"h").join(" · ")}`});
+      setSyncMsg({ok:true,txt:`Importado! ${novos.filter(p=>p.fromAgenda&&p.ativo!==false).map(p=>p.local+": "+p.horas+"h").join(" · ")}${locaisNovos.length?` · novo(s): ${locaisNovos.join(", ")}`:""}`});
       setShowPaste(false);
       setPasteJson("");
     } catch(err) {
@@ -464,12 +509,18 @@ function PlantoesView({month,setMonth,mesKey}) {
                 {p.bloqueadoSync&&ativo&&<span onClick={()=>{const pl=[...month.plantoes];pl[i]={...pl[i],bloqueadoSync:false,editadoManualmente:false};setMonth({...month,plantoes:pl});}} style={{fontSize:10,color:"#f97316",background:"rgba(249,115,22,.1)",padding:"2px 7px",borderRadius:10,cursor:"pointer",border:"1px solid rgba(249,115,22,.2)"}}>🔒 fixo ✕</span>}
                 {p.editadoManualmente&&!p.bloqueadoSync&&ativo&&<span onClick={()=>{const pl=[...month.plantoes];pl[i]={...pl[i],bloqueadoSync:true};setMonth({...month,plantoes:pl});}} style={{fontSize:10,color:"#fbbf24",background:"rgba(251,191,36,.1)",padding:"2px 7px",borderRadius:10,cursor:"pointer",border:"1px solid rgba(251,191,36,.2)"}}>✏ manual → fixar</span>}
               </div>
-              <button onClick={()=>togglePlantao(i)} style={{
-                background:ativo?"rgba(239,68,68,.08)":"rgba(74,222,128,.08)",
-                border:`1px solid ${ativo?"rgba(239,68,68,.2)":"rgba(74,222,128,.2)"}`,
-                borderRadius:8,padding:"3px 10px",cursor:"pointer",fontSize:11,
-                color:ativo?"#f87171":"#4ade80",
-              }}>{ativo?"Desativar":"Ativar"}</button>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>togglePlantao(i)} style={{
+                  background:ativo?"rgba(239,68,68,.08)":"rgba(74,222,128,.08)",
+                  border:`1px solid ${ativo?"rgba(239,68,68,.2)":"rgba(74,222,128,.2)"}`,
+                  borderRadius:8,padding:"3px 10px",cursor:"pointer",fontSize:11,
+                  color:ativo?"#f87171":"#4ade80",
+                }}>{ativo?"Desativar":"Ativar"}</button>
+                <button onClick={()=>removeLocal(p.local)} title="Remover local permanentemente" style={{
+                  background:"transparent",border:"1px solid rgba(255,255,255,.08)",
+                  borderRadius:8,padding:"3px 8px",cursor:"pointer",fontSize:11,color:"#444",
+                }}>🗑</button>
+              </div>
             </div>
             {ativo&&(
               <>
@@ -499,6 +550,28 @@ function PlantoesView({month,setMonth,mesKey}) {
           </Card>
         );
       })}
+
+      {showAddLocal?(
+        <Card style={{borderColor:"rgba(124,106,247,.2)"}}>
+          <div style={{fontSize:12,color:"#a89cf7",fontWeight:600,marginBottom:10}}>+ Novo local de plantão</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <Inp label="Nome do local" value={novoLocal.nome} onChange={v=>setNovoLocal({...novoLocal,nome:v})} placeholder="Ex: Beneficência"/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <Inp label="Valor/h (R$)" type="number" value={novoLocal.valorH} onChange={v=>setNovoLocal({...novoLocal,valorH:v})} placeholder="0"/>
+              <Inp label="Dia receb." type="number" value={novoLocal.diaReceb} onChange={v=>setNovoLocal({...novoLocal,diaReceb:v})} placeholder="25"/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
+              <Btn outline color="#555" onClick={()=>setShowAddLocal(false)}>Cancelar</Btn>
+              <Btn color="#7c6af7" onClick={addLocal}>Adicionar</Btn>
+            </div>
+          </div>
+        </Card>
+      ):(
+        <button onClick={()=>setShowAddLocal(true)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(124,106,247,.3)",background:"transparent",color:"#a89cf7",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+          + Adicionar local de plantão
+        </button>
+      )}
+      <div style={{fontSize:10,color:"#2a2a35",textAlign:"center"}}>Locais adicionados aqui (ou que aparecerem novos ao sincronizar com o Google Agenda) já ficam disponíveis nos próximos meses, sem precisar editar código</div>
 
       {/* ── RECEITAS EXTRAS ── */}
       <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:1,padding:"2px 0"}}>Receitas extras do mês</div>
@@ -2013,13 +2086,20 @@ export default function App() {
   const [saving,setSaving]=useState(false);
   const [gdriveStatus,setGdriveStatus]=useState("idle");
   const [cats,setCatsState]=useState(CATS_DEFAULT);
+  const [locais,setLocaisState]=useState(LOCAIS_DEFAULT);
   const storageKey=`month:${mesKey}`;
 
   const setCats=(newCats)=>{ CATS=newCats; setCatsState(newCats); };
+  const setLocais=(newLocais)=>{ LOCAIS=newLocais; setLocaisState(newLocais); save("config:locais",newLocais); };
 
   // Load cats from storage
   useEffect(()=>{
     load("config:cats").then(d=>{ if(d&&Array.isArray(d)){ CATS=d; setCatsState(d); } });
+  },[]);
+
+  // Load locais de plantão from storage
+  useEffect(()=>{
+    load("config:locais").then(d=>{ if(d&&Array.isArray(d)&&d.length){ LOCAIS=d; setLocaisState(d); } });
   },[]);
 
   // Auto-load from Supabase on first open if localStorage is empty
@@ -2261,7 +2341,7 @@ useEffect(()=>{
         <div style={{flex:1,padding:"10px 16px 90px"}}>
           {!month?<div style={{textAlign:"center",padding:"60px 0",color:"#222"}}>Carregando…</div>
             :view==="dashboard"?<Dashboard month={month} setView={setView}/>
-            :view==="plantoes"?<PlantoesView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
+            :view==="plantoes"?<PlantoesView month={month} setMonth={setMonthRaw} mesKey={mesKey} locais={locais} setLocais={setLocais}/>
             :view==="fixas"?<FixasView month={month} setMonth={setMonthRaw}/>
             :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="variaveis"?<PixView month={month} setMonth={setMonthRaw}/>
