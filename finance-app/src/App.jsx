@@ -110,11 +110,21 @@ const seedMonth = key => ({
   fixas: FIXAS_BASE.map((f,i)=>({...f,id:i+1,status:"pendente",forma:"",banco:"",dataPgto:"",valor:0,extra:false,duracao:f.duracao||"sempre",mesesRestantes:null})),
   cartoes: {inter:[],itau:[],will:[],xp:[]},
   variaveis: [],
-  investimentos: [
-    {id:1,produto:"CDB / Tesouro Direto",tipo:"Renda Fixa",aplicado:0,atual:0},
-    {id:2,produto:"Fundo de Investimento",tipo:"Fundo",aplicado:0,atual:0},
-  ],
+  investimentos: [],
+  investimentosFotoConfirmada: false,
 });
+
+const normalizeInvestimentos = arr => (arr||[])
+  .filter(i=>i&&i.produto)
+  .map(i=>({
+    ...i,
+    atual:Number(i.atual)||0,
+    aporte:Number(i.aporte)||0,
+    resgate:Number(i.resgate)||0,
+  }));
+
+const hasFotoInvestimentos = d => d?.investimentosFotoConfirmada===true
+  || (d?.investimentos||[]).some(i=>Number(i.atual)>0);
 
 const mergePlantoesConfig = plantoes => {
   const base=(plantoes||[]).map(p=>{
@@ -127,38 +137,55 @@ const mergePlantoesConfig = plantoes => {
 };
 
 const G = `
-  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-  body{font-family:'Sora',sans-serif;background:#0a0a0f;color:#f0f0f5;min-height:100vh;}
-  .mono{font-family:'JetBrains Mono',monospace;}
-  input,select,button{font-family:'Sora',sans-serif;}
-  ::-webkit-scrollbar{width:3px;} ::-webkit-scrollbar-thumb{background:#222;}
+  :root{color-scheme:light;--bg:#eef3f8;--surface:#fff;--surface-soft:#f7f9fc;--text:#172033;--muted:#6b778c;--line:#dfe6ef;--brand:#5b58d6;--brand-soft:#eeedff;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  input,select,button{font-family:'DM Sans',sans-serif;}
+  button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid rgba(91,88,214,.2)!important;outline-offset:2px;}
+  ::-webkit-scrollbar{width:8px;height:8px;} ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px;}
+  .app-shell{width:100%;max-width:1180px;margin:0 auto;min-height:100vh;background:transparent;display:flex;flex-direction:column;}
+  .app-main{flex:1;padding:18px 24px 48px;}
+  .view-stack{display:flex;flex-direction:column;gap:14px;}
+  .mobile-nav{display:none!important;}
+  .dashboard-grid{display:grid!important;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px!important;}
+  .dashboard-grid>*{grid-column:span 6;}
+  .dashboard-grid>*:first-child{grid-column:span 8;grid-row:span 2;}
+  .dashboard-grid>*:nth-child(2){grid-column:span 4;}
+  .dashboard-grid>*:last-child{grid-column:1/-1;}
+  @media(max-width:760px){
+    .app-main{padding:10px 14px 92px;}
+    .dashboard-grid{display:flex!important;}
+    .mobile-nav{display:flex!important;}
+    .desktop-tabs{padding-bottom:6px!important;}
+  }
 `;
 
-const Card = ({children,style={}}) => (
-  <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.07)",borderRadius:16,padding:16,...style}}>
+const Card = ({children,style={},...props}) => (
+  <div {...props} style={{background:"#fff",border:"1px solid #dfe6ef",boxShadow:"0 8px 26px rgba(43,55,80,.06)",borderRadius:18,padding:18,...style}}>
     {children}
   </div>
 );
 const Inp = ({label,type="text",value,onChange,placeholder,style={}}) => (
   <div style={{display:"flex",flexDirection:"column",gap:4,...style}}>
-    {label&&<label style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>{label}</label>}
+    {label&&<label style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>{label}</label>}
     <input type={type} value={value??""} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
-      style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.08)",borderRadius:10,padding:"10px 12px",color:"#f0f0f5",fontSize:14,outline:"none",width:"100%"}}/>
+      style={{background:"#f8fafc",border:"1px solid #dbe3ed",borderRadius:10,padding:"10px 12px",color:"#172033",fontSize:14,outline:"none",width:"100%"}}/>
   </div>
 );
 const Sel = ({label,value,onChange,options,style={}}) => (
   <div style={{display:"flex",flexDirection:"column",gap:4,...style}}>
-    {label&&<label style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>{label}</label>}
+    {label&&<label style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>{label}</label>}
     <select value={value??""} onChange={e=>onChange(e.target.value)}
-      style={{background:"#111118",border:"1px solid rgba(255,255,255,.08)",borderRadius:10,padding:"10px 12px",color:"#f0f0f5",fontSize:14,outline:"none",width:"100%"}}>
+      style={{background:"#f8fafc",border:"1px solid #dbe3ed",borderRadius:10,padding:"10px 12px",color:"#172033",fontSize:14,outline:"none",width:"100%"}}>
       {options.map(o=><option key={o.value??o} value={o.value??o}>{o.label??o}</option>)}
     </select>
   </div>
 );
-const Btn = ({children,onClick,color="#7c6af7",outline,style={}}) => (
+const Btn = ({children,onClick,color="#5b58d6",outline,style={}}) => (
   <button onClick={onClick} style={{padding:"11px 16px",borderRadius:11,border:outline?`1px solid ${color}55`:"none",
-    background:outline?"transparent":color,color:outline?color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",width:"100%",...style}}>
+    background:outline?"transparent":color,color:outline?color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",width:"100%",...style}}>
     {children}
   </button>
 );
@@ -167,10 +194,10 @@ function MonthNav({mesKey,setMesKey}) {
   const [y,m]=mesKey.split("-").map(Number);
   const go=d=>{ const dt=new Date(y,m-1+d); setMesKey(`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}`); };
   return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"rgba(255,255,255,.04)",borderRadius:12,padding:"8px 14px",border:"1px solid rgba(255,255,255,.07)"}}>
-      <button onClick={()=>go(-1)} style={{background:"none",border:"none",color:"#555",fontSize:22,cursor:"pointer",lineHeight:1}}>‹</button>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#fff",borderRadius:12,padding:"8px 14px",border:"1px solid #dfe6ef",boxShadow:"0 4px 16px rgba(43,55,80,.05)"}}>
+      <button onClick={()=>go(-1)} style={{background:"none",border:"none",color:"#64748b",fontSize:22,cursor:"pointer",lineHeight:1}}>‹</button>
       <span style={{fontSize:14,fontWeight:700,letterSpacing:.5}}>{mesLabel(mesKey)}</span>
-      <button onClick={()=>go(+1)} style={{background:"none",border:"none",color:"#555",fontSize:22,cursor:"pointer",lineHeight:1}}>›</button>
+      <button onClick={()=>go(+1)} style={{background:"none",border:"none",color:"#64748b",fontSize:22,cursor:"pointer",lineHeight:1}}>›</button>
     </div>
   );
 }
@@ -181,8 +208,10 @@ function Dashboard({month,setView}) {
   const fixT=month.fixas.reduce((s,f)=>s+Number(f.valor||0),0);
   const carT=Object.values(month.cartoes).flat().reduce((s,t)=>s+Number(t.valor||0),0);
   const pixT=(month.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
-  const invT=month.investimentos.reduce((s,i)=>s+Number(i.aplicado||0),0);
-  const saldo=recT-fixT-carT-pixT-invT;
+  const aportesT=(month.investimentos||[]).reduce((s,i)=>s+Number(i.aporte||0),0);
+  const resgatesT=(month.investimentos||[]).reduce((s,i)=>s+Number(i.resgate||0),0);
+  const patrimonioT=(month.investimentos||[]).reduce((s,i)=>s+Number(i.atual||0),0);
+  const saldo=recT-fixT-carT-pixT-aportesT+resgatesT;
   const despT=fixT+carT+pixT;
   const fixPend=month.fixas.filter(f=>f.status==="pendente"&&Number(f.valor)>0).length;
   const catMap={};
@@ -197,26 +226,26 @@ function Dashboard({month,setView}) {
   ];
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+    <div className="dashboard-grid view-stack">
       <Card style={{background:"linear-gradient(135deg,rgba(124,106,247,.12),rgba(0,180,150,.08))",borderColor:"rgba(124,106,247,.18)"}}>
-        <div style={{fontSize:10,color:"#555",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Saldo livre do mês</div>
-        <div className="mono" style={{fontSize:36,fontWeight:600,letterSpacing:-2,color:saldo>=0?"#4ade80":"#f87171"}}>{fmtBRL(saldo)}</div>
-        <div style={{height:1,background:"rgba(255,255,255,.05)",margin:"12px 0"}}/>
+        <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Saldo livre do mês</div>
+        <div className="mono" style={{fontSize:36,fontWeight:600,letterSpacing:-2,color:saldo>=0?"#15803d":"#dc2626"}}>{fmtBRL(saldo)}</div>
+        <div style={{height:1,background:"rgba(15,23,42,.05)",margin:"12px 0"}}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {[["Receita",recT,"#4ade80"],["Despesas",despT,"#f87171"]].map(([l,v,c])=>(
-            <div key={l}><div style={{fontSize:10,color:"#444"}}>{l}</div><div className="mono" style={{fontSize:19,color:c,fontWeight:600}}>{fmtBRL(v)}</div></div>
+          {[["Receita",recT,"#15803d"],["Despesas",despT,"#dc2626"]].map(([l,v,c])=>(
+            <div key={l}><div style={{fontSize:10,color:"#7c8799"}}>{l}</div><div className="mono" style={{fontSize:19,color:c,fontWeight:600}}>{fmtBRL(v)}</div></div>
           ))}
         </div>
       </Card>
 
-      <Card style={{padding:"12px 14px",borderColor:agendaOk?"rgba(74,222,128,.15)":"rgba(255,255,255,.07)"}}>
+      <Card style={{padding:"12px 14px",borderColor:agendaOk?"rgba(74,222,128,.15)":"rgba(15,23,42,.07)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{fontSize:22}}>📅</div>
           <div style={{flex:1}}>
-            <div style={{fontSize:13,fontWeight:600,color:agendaOk?"#4ade80":"#f0f0f5"}}>{agendaOk?"Plantões sincronizados":"Plantões não sincronizados"}</div>
-            <div style={{fontSize:11,color:"#444"}}>{agendaOk?`${month.plantoes.reduce((s,p)=>s+p.horas,0)}h · ${fmtBRL(recT)}`:"Configure o Apps Script para sincronizar"}</div>
+            <div style={{fontSize:13,fontWeight:600,color:agendaOk?"#15803d":"#172033"}}>{agendaOk?"Plantões sincronizados":"Plantões não sincronizados"}</div>
+            <div style={{fontSize:11,color:"#7c8799"}}>{agendaOk?`${month.plantoes.reduce((s,p)=>s+p.horas,0)}h · ${fmtBRL(recT)}`:"Configure o Apps Script para sincronizar"}</div>
           </div>
-          <button onClick={()=>setView("plantoes")} style={{background:"rgba(124,106,247,.15)",border:"1px solid rgba(124,106,247,.2)",borderRadius:8,padding:"6px 10px",color:"#a89cf7",fontSize:11,cursor:"pointer"}}>{agendaOk?"Ver":"Config"}</button>
+          <button onClick={()=>setView("plantoes")} style={{background:"rgba(124,106,247,.15)",border:"1px solid rgba(124,106,247,.2)",borderRadius:8,padding:"6px 10px",color:"#5b58d6",fontSize:11,cursor:"pointer"}}>{agendaOk?"Ver":"Config"}</button>
         </div>
       </Card>
 
@@ -225,10 +254,10 @@ function Dashboard({month,setView}) {
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <div style={{fontSize:22}}>⚠️</div>
             <div style={{flex:1}}>
-              <div style={{fontSize:13,fontWeight:600,color:"#f87171"}}>{recAtrasado.length} recebimento{recAtrasado.length>1?"s":""} atrasado{recAtrasado.length>1?"s":""}</div>
-              <div style={{fontSize:11,color:"#666"}}>{recAtrasado.map(r=>r.local||r.desc).join(", ")}</div>
+              <div style={{fontSize:13,fontWeight:600,color:"#dc2626"}}>{recAtrasado.length} recebimento{recAtrasado.length>1?"s":""} atrasado{recAtrasado.length>1?"s":""}</div>
+              <div style={{fontSize:11,color:"#64748b"}}>{recAtrasado.map(r=>r.local||r.desc).join(", ")}</div>
             </div>
-            <button onClick={()=>setView("plantoes")} style={{background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.25)",borderRadius:8,padding:"6px 10px",color:"#f87171",fontSize:11,cursor:"pointer"}}>Ver</button>
+            <button onClick={()=>setView("plantoes")} style={{background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.25)",borderRadius:8,padding:"6px 10px",color:"#dc2626",fontSize:11,cursor:"pointer"}}>Ver</button>
           </div>
         </Card>
       )}
@@ -238,37 +267,37 @@ function Dashboard({month,setView}) {
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <div style={{fontSize:22}}>⏳</div>
             <div style={{flex:1}}>
-              <div style={{fontSize:13,fontWeight:600,color:"#fbbf24"}}>{fixPend} despesa{fixPend>1?"s":""} pendente{fixPend>1?"s":""}</div>
-              <div style={{fontSize:11,color:"#666"}}>Com valor lançado mas não pagas</div>
+              <div style={{fontSize:13,fontWeight:600,color:"#b45309"}}>{fixPend} despesa{fixPend>1?"s":""} pendente{fixPend>1?"s":""}</div>
+              <div style={{fontSize:11,color:"#64748b"}}>Com valor lançado mas não pagas</div>
             </div>
-            <button onClick={()=>setView("fixas")} style={{background:"rgba(251,191,36,.12)",border:"1px solid rgba(251,191,36,.25)",borderRadius:8,padding:"6px 10px",color:"#fbbf24",fontSize:11,cursor:"pointer"}}>Ver</button>
+            <button onClick={()=>setView("fixas")} style={{background:"rgba(251,191,36,.12)",border:"1px solid rgba(251,191,36,.25)",borderRadius:8,padding:"6px 10px",color:"#b45309",fontSize:11,cursor:"pointer"}}>Ver</button>
           </div>
         </Card>
       )}
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        {[{label:"Fixas",val:fixT,color:"#818cf8",icon:"📋",v:"fixas"},{label:"Cartões",val:carT,color:"#f97316",icon:"💳",v:"cartoes"},{label:"Pix/Var.",val:pixT,color:"#22d3ee",icon:"📱",v:"variaveis"},{label:"Investido",val:invT,color:"#a78bfa",icon:"📈",v:"investimentos"}].map(b=>(
+        {[{label:"Fixas",val:fixT,color:"#4f46e5",icon:"📋",v:"fixas"},{label:"Cartões",val:carT,color:"#c2410c",icon:"💳",v:"cartoes"},{label:"Pix/Var.",val:pixT,color:"#0e7490",icon:"📱",v:"variaveis"},{label:"Patrimônio",val:patrimonioT,color:"#6d28d9",icon:"📈",v:"investimentos"}].map(b=>(
           <Card key={b.label} style={{cursor:"pointer"}} onClick={()=>setView(b.v)}>
             <div style={{fontSize:20,marginBottom:4}}>{b.icon}</div>
             <div className="mono" style={{fontSize:16,fontWeight:600,color:b.color}}>{fmtBRL(b.val)}</div>
-            <div style={{fontSize:11,color:"#444",marginTop:2}}>{b.label}</div>
+            <div style={{fontSize:11,color:"#7c8799",marginTop:2}}>{b.label}</div>
           </Card>
         ))}
       </div>
 
       {topCats.length>0&&(
         <Card>
-          <div style={{fontSize:10,color:"#444",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Top Categorias</div>
+          <div style={{fontSize:10,color:"#7c8799",fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Top Categorias</div>
           {topCats.map(([cat,val])=>{
             const pct=despT>0?Math.round(val/despT*100):0;
             return (
               <div key={cat} style={{marginBottom:10}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                  <span style={{fontSize:13,color:"#ccc"}}>{cat}</span>
-                  <span className="mono" style={{fontSize:12,color:"#666"}}>{fmtBRL(val)} · {pct}%</span>
+                  <span style={{fontSize:13,color:"#334155"}}>{cat}</span>
+                  <span className="mono" style={{fontSize:12,color:"#64748b"}}>{fmtBRL(val)} · {pct}%</span>
                 </div>
-                <div style={{height:3,background:"rgba(255,255,255,.05)",borderRadius:2}}>
-                  <div style={{height:"100%",width:`${pct}%`,background:"#7c6af7",borderRadius:2}}/>
+                <div style={{height:3,background:"rgba(15,23,42,.05)",borderRadius:2}}>
+                  <div style={{height:"100%",width:`${pct}%`,background:"#5b58d6",borderRadius:2}}/>
                 </div>
               </div>
             );
@@ -282,9 +311,9 @@ function Dashboard({month,setView}) {
 
 // Status badge helper for receitas
 const STATUS_OPTS = [
-  {value:"aguardando", label:"⏳ Aguardando", color:"#fbbf24", bg:"rgba(251,191,36,.1)", border:"rgba(251,191,36,.2)"},
-  {value:"recebido",   label:"✓ Recebido",   color:"#4ade80", bg:"rgba(74,222,128,.1)", border:"rgba(74,222,128,.2)"},
-  {value:"atrasado",   label:"⚠ Atrasado",   color:"#f87171", bg:"rgba(239,68,68,.1)",  border:"rgba(239,68,68,.2)"},
+  {value:"aguardando", label:"⏳ Aguardando", color:"#b45309", bg:"rgba(251,191,36,.1)", border:"rgba(251,191,36,.2)"},
+  {value:"recebido",   label:"✓ Recebido",   color:"#15803d", bg:"rgba(74,222,128,.1)", border:"rgba(74,222,128,.2)"},
+  {value:"atrasado",   label:"⚠ Atrasado",   color:"#dc2626", bg:"rgba(239,68,68,.1)",  border:"rgba(239,68,68,.2)"},
 ];
 function StatusBadge({value, onChange}) {
   const cur = STATUS_OPTS.find(s=>s.value===value)||STATUS_OPTS[0];
@@ -432,23 +461,23 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
 
       {/* Total receita */}
       <Card style={{background:"linear-gradient(135deg,rgba(74,222,128,.1),rgba(0,150,100,.06))",borderColor:"rgba(74,222,128,.2)"}}>
-        <div style={{fontSize:10,color:"#555",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Total receita do mês</div>
-        <div className="mono" style={{fontSize:34,fontWeight:600,color:"#4ade80",letterSpacing:-1}}>{fmtBRL(total)}</div>
-        <div style={{height:1,background:"rgba(255,255,255,.05)",margin:"10px 0"}}/>
+        <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Total receita do mês</div>
+        <div className="mono" style={{fontSize:34,fontWeight:600,color:"#15803d",letterSpacing:-1}}>{fmtBRL(total)}</div>
+        <div style={{height:1,background:"rgba(15,23,42,.05)",margin:"10px 0"}}/>
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
-          {plantaoT>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#555"}}>Plantões</span><span className="mono" style={{fontSize:11,color:"#4ade80"}}>{fmtBRL(plantaoT)}</span></div>}
-          {bolsaV>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#555"}}>Bolsa residência</span><span className="mono" style={{fontSize:11,color:"#4ade80"}}>{fmtBRL(bolsaV)}</span></div>}
-          {auxilioV>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#555"}}>Auxílio moradia</span><span className="mono" style={{fontSize:11,color:"#4ade80"}}>{fmtBRL(auxilioV)}</span></div>}
-          {extrasT>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#555"}}>Receitas extras</span><span className="mono" style={{fontSize:11,color:"#4ade80"}}>{fmtBRL(extrasT)}</span></div>}
+          {plantaoT>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#64748b"}}>Plantões</span><span className="mono" style={{fontSize:11,color:"#15803d"}}>{fmtBRL(plantaoT)}</span></div>}
+          {bolsaV>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#64748b"}}>Bolsa residência</span><span className="mono" style={{fontSize:11,color:"#15803d"}}>{fmtBRL(bolsaV)}</span></div>}
+          {auxilioV>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#64748b"}}>Auxílio moradia</span><span className="mono" style={{fontSize:11,color:"#15803d"}}>{fmtBRL(auxilioV)}</span></div>}
+          {extrasT>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#64748b"}}>Receitas extras</span><span className="mono" style={{fontSize:11,color:"#15803d"}}>{fmtBRL(extrasT)}</span></div>}
         </div>
       </Card>
 
       {/* ── BOLSA + AUXÍLIO ── */}
-      <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:1,padding:"2px 0"}}>Receitas fixas mensais</div>
+      <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:1,padding:"2px 0"}}>Receitas fixas mensais</div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         <Card style={{padding:"12px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div style={{fontSize:11,color:"#a89cf7",fontWeight:600}}>🎓 Bolsa residência</div>
+            <div style={{fontSize:11,color:"#5b58d6",fontWeight:600}}>🎓 Bolsa residência</div>
             <StatusBadge value={month.bolsaStatus||"aguardando"} onChange={v=>setMonth({...month,bolsaStatus:v})}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8}}>
@@ -458,7 +487,7 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
         </Card>
         <Card style={{padding:"12px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div style={{fontSize:11,color:"#a89cf7",fontWeight:600}}>🏠 Auxílio moradia</div>
+            <div style={{fontSize:11,color:"#5b58d6",fontWeight:600}}>🏠 Auxílio moradia</div>
             <StatusBadge value={month.auxilioStatus||"aguardando"} onChange={v=>setMonth({...month,auxilioStatus:v})}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8}}>
@@ -470,27 +499,27 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
 
       {/* ── PLANTÕES ── */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 0"}}>
-        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Plantões</div>
+        <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Plantões</div>
         <div style={{display:"flex",gap:6}}>
-          <button onClick={syncAgenda} disabled={agendaLoading} style={{background:"rgba(74,222,128,.15)",border:"1px solid rgba(74,222,128,.25)",borderRadius:8,padding:"4px 10px",color:"#4ade80",fontSize:10,fontWeight:600,cursor:agendaLoading?"not-allowed":"pointer"}}>
+          <button onClick={syncAgenda} disabled={agendaLoading} style={{background:"rgba(74,222,128,.15)",border:"1px solid rgba(74,222,128,.25)",borderRadius:8,padding:"4px 10px",color:"#15803d",fontSize:10,fontWeight:600,cursor:agendaLoading?"not-allowed":"pointer"}}>
             {agendaLoading?"⏳":"🗓"} {agendaLoading?"Sincronizando...":"Sincronizar"}
           </button>
-          <button onClick={()=>setShowPaste(!showPaste)} style={{background:"rgba(124,106,247,.15)",border:"1px solid rgba(124,106,247,.25)",borderRadius:8,padding:"4px 10px",color:"#a89cf7",fontSize:10,fontWeight:600,cursor:"pointer"}}>📋 JSON</button>
+          <button onClick={()=>setShowPaste(!showPaste)} style={{background:"rgba(124,106,247,.15)",border:"1px solid rgba(124,106,247,.25)",borderRadius:8,padding:"4px 10px",color:"#5b58d6",fontSize:10,fontWeight:600,cursor:"pointer"}}>📋 JSON</button>
         </div>
       </div>
 
       {/* Sync result */}
       {agendaMsg&&(
-        <div style={{padding:"8px 12px",borderRadius:10,background:agendaMsg.ok?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",fontSize:12,color:agendaMsg.ok?"#4ade80":"#f87171",border:`1px solid ${agendaMsg.ok?"rgba(74,222,128,.2)":"rgba(239,68,68,.2)"}`}}>
+        <div style={{padding:"8px 12px",borderRadius:10,background:agendaMsg.ok?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",fontSize:12,color:agendaMsg.ok?"#15803d":"#dc2626",border:`1px solid ${agendaMsg.ok?"rgba(74,222,128,.2)":"rgba(239,68,68,.2)"}`}}>
           {agendaMsg.txt}
         </div>
       )}
       {syncMsg&&(
-        <div style={{padding:"8px 12px",borderRadius:10,background:syncMsg.ok?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",fontSize:12,color:syncMsg.ok?"#4ade80":"#f87171"}}>
+        <div style={{padding:"8px 12px",borderRadius:10,background:syncMsg.ok?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",fontSize:12,color:syncMsg.ok?"#15803d":"#dc2626"}}>
           {syncMsg.txt}
           {syncPeriodos&&<div style={{marginTop:4,display:"flex",flexDirection:"column",gap:2}}>
             {Object.entries(syncPeriodos).map(([l,p])=>(
-              <span key={l} style={{fontSize:10,color:"#444"}}>{l}: {p.inicio} → {p.fim}</span>
+              <span key={l} style={{fontSize:10,color:"#7c8799"}}>{l}: {p.inicio} → {p.fim}</span>
             ))}
           </div>}
         </div>
@@ -499,21 +528,21 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
       {/* Paste JSON panel */}
       {showPaste&&(
         <Card style={{borderColor:"rgba(124,106,247,.2)"}}>
-          <div style={{fontSize:12,color:"#a89cf7",fontWeight:600,marginBottom:10}}>📋 Importar da Google Agenda</div>
+          <div style={{fontSize:12,color:"#5b58d6",fontWeight:600,marginBottom:10}}>📋 Importar da Google Agenda</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            <div style={{fontSize:11,color:"#666",lineHeight:1.7}}>
+            <div style={{fontSize:11,color:"#64748b",lineHeight:1.7}}>
               1. Abra este link no navegador:<br/>
-              <span style={{wordBreak:"break-all",color:"#7c6af7",fontSize:10}}>{`${AGENDA_URL}?mes=${mesKey}`}</span>
+              <span style={{wordBreak:"break-all",color:"#5b58d6",fontSize:10}}>{`${AGENDA_URL}?mes=${mesKey}`}</span>
             </div>
-            <div style={{fontSize:11,color:"#666"}}>2. Copie o JSON e cole abaixo</div>
+            <div style={{fontSize:11,color:"#64748b"}}>2. Copie o JSON e cole abaixo</div>
             <textarea value={pasteJson} onChange={e=>setPasteJson(e.target.value)}
               placeholder={`{"plantoes":{"Leonor":{"n":3,"horas":36},...}}`}
-              style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,
-                padding:"10px",color:"#f0f0f5",fontSize:11,outline:"none",width:"100%",
+              style={{background:"rgba(15,23,42,.06)",border:"1px solid rgba(15,23,42,.1)",borderRadius:10,
+                padding:"10px",color:"#172033",fontSize:11,outline:"none",width:"100%",
                 minHeight:80,resize:"vertical",fontFamily:"'JetBrains Mono',monospace"}}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              <button onClick={()=>{setShowPaste(false);setPasteJson("");}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"#555",fontSize:13,cursor:"pointer"}}>Cancelar</button>
-              <button onClick={importJson} style={{padding:"10px",borderRadius:10,border:"none",background:"#7c6af7",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Importar</button>
+              <button onClick={()=>{setShowPaste(false);setPasteJson("");}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(15,23,42,.1)",background:"transparent",color:"#64748b",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+              <button onClick={importJson} style={{padding:"10px",borderRadius:10,border:"none",background:"#5b58d6",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Importar</button>
             </div>
           </div>
         </Card>
@@ -523,24 +552,24 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
       {(month.plantoes||[]).map((p,i)=>{
         const ativo=p.ativo!==false;
         return (
-          <Card key={p.local} style={{opacity:ativo?1:.5,borderColor:ativo?"rgba(255,255,255,.07)":"rgba(255,255,255,.03)"}}>
+          <Card key={p.local} style={{opacity:ativo?1:.5,borderColor:ativo?"rgba(15,23,42,.07)":"rgba(15,23,42,.03)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:ativo?10:0}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{fontSize:14,fontWeight:600,color:ativo?"#a89cf7":"#444"}}>{p.local}</div>
-                {p.fromAgenda&&ativo&&<span style={{fontSize:10,color:"#4ade80",background:"rgba(74,222,128,.1)",padding:"2px 7px",borderRadius:10}}>📅 agenda</span>}
-                {p.bloqueadoSync&&ativo&&<span onClick={()=>{const pl=[...month.plantoes];pl[i]={...pl[i],bloqueadoSync:false,editadoManualmente:false};setMonth({...month,plantoes:pl});}} style={{fontSize:10,color:"#f97316",background:"rgba(249,115,22,.1)",padding:"2px 7px",borderRadius:10,cursor:"pointer",border:"1px solid rgba(249,115,22,.2)"}}>🔒 fixo ✕</span>}
-                {p.editadoManualmente&&!p.bloqueadoSync&&ativo&&<span onClick={()=>{const pl=[...month.plantoes];pl[i]={...pl[i],bloqueadoSync:true};setMonth({...month,plantoes:pl});}} style={{fontSize:10,color:"#fbbf24",background:"rgba(251,191,36,.1)",padding:"2px 7px",borderRadius:10,cursor:"pointer",border:"1px solid rgba(251,191,36,.2)"}}>✏ manual → fixar</span>}
+                <div style={{fontSize:14,fontWeight:600,color:ativo?"#5b58d6":"#7c8799"}}>{p.local}</div>
+                {p.fromAgenda&&ativo&&<span style={{fontSize:10,color:"#15803d",background:"rgba(74,222,128,.1)",padding:"2px 7px",borderRadius:10}}>📅 agenda</span>}
+                {p.bloqueadoSync&&ativo&&<span onClick={()=>{const pl=[...month.plantoes];pl[i]={...pl[i],bloqueadoSync:false,editadoManualmente:false};setMonth({...month,plantoes:pl});}} style={{fontSize:10,color:"#c2410c",background:"rgba(249,115,22,.1)",padding:"2px 7px",borderRadius:10,cursor:"pointer",border:"1px solid rgba(249,115,22,.2)"}}>🔒 fixo ✕</span>}
+                {p.editadoManualmente&&!p.bloqueadoSync&&ativo&&<span onClick={()=>{const pl=[...month.plantoes];pl[i]={...pl[i],bloqueadoSync:true};setMonth({...month,plantoes:pl});}} style={{fontSize:10,color:"#b45309",background:"rgba(251,191,36,.1)",padding:"2px 7px",borderRadius:10,cursor:"pointer",border:"1px solid rgba(251,191,36,.2)"}}>✏ manual → fixar</span>}
               </div>
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>togglePlantao(i)} style={{
                   background:ativo?"rgba(239,68,68,.08)":"rgba(74,222,128,.08)",
                   border:`1px solid ${ativo?"rgba(239,68,68,.2)":"rgba(74,222,128,.2)"}`,
                   borderRadius:8,padding:"3px 10px",cursor:"pointer",fontSize:11,
-                  color:ativo?"#f87171":"#4ade80",
+                  color:ativo?"#dc2626":"#15803d",
                 }}>{ativo?"Desativar":"Ativar"}</button>
                 <button onClick={()=>removeLocal(p.local)} title="Remover local permanentemente" style={{
-                  background:"transparent",border:"1px solid rgba(255,255,255,.08)",
-                  borderRadius:8,padding:"3px 8px",cursor:"pointer",fontSize:11,color:"#444",
+                  background:"transparent",border:"1px solid rgba(15,23,42,.08)",
+                  borderRadius:8,padding:"3px 8px",cursor:"pointer",fontSize:11,color:"#7c8799",
                 }}>🗑</button>
               </div>
             </div>
@@ -551,20 +580,20 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
                   <Inp label="Horas" type="number" value={p.horas||""} onChange={v=>updPlantao(i,"horas",v)} placeholder="0"/>
                   <Inp label="Valor/h (R$)" type="number" value={p.valorH||""} onChange={v=>updPlantao(i,"valorH",v)} placeholder="0"/>
                 </div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,.05)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8,paddingTop:8,borderTop:"1px solid rgba(15,23,42,.05)"}}>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{fontSize:11,color:"#444"}}>Recebimento:</span>
-                    <span style={{fontSize:11,color:"#666"}}>dia</span>
+                    <span style={{fontSize:11,color:"#7c8799"}}>Recebimento:</span>
+                    <span style={{fontSize:11,color:"#64748b"}}>dia</span>
                     <input type="number" value={p.diaReceb||""} onChange={e=>updPlantao(i,"diaReceb",e.target.value)}
-                      placeholder="25" style={{width:40,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.08)",
-                      borderRadius:6,padding:"3px 6px",color:"#f0f0f5",fontSize:11,outline:"none",textAlign:"center"}}/>
+                      placeholder="25" style={{width:40,background:"rgba(15,23,42,.06)",border:"1px solid rgba(15,23,42,.08)",
+                      borderRadius:6,padding:"3px 6px",color:"#172033",fontSize:11,outline:"none",textAlign:"center"}}/>
                   </div>
                   <StatusBadge value={p.statusReceb||"aguardando"} onChange={v=>updPlantao(i,"statusReceb",v)}/>
                 </div>
                 {p.horas>0&&p.valorH>0&&(
                   <div style={{marginTop:8,padding:"7px 10px",background:"rgba(74,222,128,.07)",borderRadius:8,display:"flex",justifyContent:"space-between"}}>
-                    <span style={{fontSize:12,color:"#555"}}>{p.horas}h × {fmtBRL(p.valorH)}</span>
-                    <span className="mono" style={{fontSize:13,color:"#4ade80",fontWeight:600}}>{fmtBRL(p.horas*p.valorH)}</span>
+                    <span style={{fontSize:12,color:"#64748b"}}>{p.horas}h × {fmtBRL(p.valorH)}</span>
+                    <span className="mono" style={{fontSize:13,color:"#15803d",fontWeight:600}}>{fmtBRL(p.horas*p.valorH)}</span>
                   </div>
                 )}
               </>
@@ -575,7 +604,7 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
 
       {showAddLocal?(
         <Card style={{borderColor:"rgba(124,106,247,.2)"}}>
-          <div style={{fontSize:12,color:"#a89cf7",fontWeight:600,marginBottom:10}}>+ Novo local de plantão</div>
+          <div style={{fontSize:12,color:"#5b58d6",fontWeight:600,marginBottom:10}}>+ Novo local de plantão</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <Inp label="Nome do local" value={novoLocal.nome} onChange={v=>setNovoLocal({...novoLocal,nome:v})} placeholder="Ex: Beneficência"/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -583,35 +612,35 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
               <Inp label="Dia receb." type="number" value={novoLocal.diaReceb} onChange={v=>setNovoLocal({...novoLocal,diaReceb:v})} placeholder="25"/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
-              <Btn outline color="#555" onClick={()=>setShowAddLocal(false)}>Cancelar</Btn>
-              <Btn color="#7c6af7" onClick={addLocal}>Adicionar</Btn>
+              <Btn outline color="#64748b" onClick={()=>setShowAddLocal(false)}>Cancelar</Btn>
+              <Btn color="#5b58d6" onClick={addLocal}>Adicionar</Btn>
             </div>
           </div>
         </Card>
       ):(
-        <button onClick={()=>setShowAddLocal(true)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(124,106,247,.3)",background:"transparent",color:"#a89cf7",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+        <button onClick={()=>setShowAddLocal(true)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(124,106,247,.3)",background:"transparent",color:"#5b58d6",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
           + Adicionar local de plantão
         </button>
       )}
-      <div style={{fontSize:10,color:"#2a2a35",textAlign:"center"}}>Locais adicionados aqui (ou que aparecerem novos ao sincronizar com o Google Agenda) já ficam disponíveis nos próximos meses, sem precisar editar código</div>
+      <div style={{fontSize:10,color:"#94a3b8",textAlign:"center"}}>Locais adicionados aqui (ou que aparecerem novos ao sincronizar com o Google Agenda) já ficam disponíveis nos próximos meses, sem precisar editar código</div>
 
       {/* ── RECEITAS EXTRAS ── */}
-      <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:1,padding:"2px 0"}}>Receitas extras do mês</div>
+      <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:1,padding:"2px 0"}}>Receitas extras do mês</div>
 
       {(month.receitasExtra||[]).map(r=>(
         <Card key={r.id} style={{padding:"10px 14px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,color:"#f0f0f5"}}>{r.desc}</div>
-              {r.dia>0&&<div style={{fontSize:10,color:"#444",marginTop:2}}>Dia {r.dia}</div>}
+              <div style={{fontSize:13,color:"#172033"}}>{r.desc}</div>
+              {r.dia>0&&<div style={{fontSize:10,color:"#7c8799",marginTop:2}}>Dia {r.dia}</div>}
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
               <StatusBadge value={r.status||"aguardando"} onChange={v=>{
                 const extras=(month.receitasExtra||[]).map(x=>x.id===r.id?{...x,status:v}:x);
                 setMonth({...month,receitasExtra:extras});
               }}/>
-              <span className="mono" style={{fontSize:14,color:"#4ade80",fontWeight:500}}>{fmtBRL(r.valor)}</span>
-              <button onClick={()=>removeExtra(r.id)} style={{background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.15)",borderRadius:6,padding:"3px 7px",color:"#f87171",fontSize:11,cursor:"pointer"}}>✕</button>
+              <span className="mono" style={{fontSize:14,color:"#15803d",fontWeight:500}}>{fmtBRL(r.valor)}</span>
+              <button onClick={()=>removeExtra(r.id)} style={{background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.15)",borderRadius:6,padding:"3px 7px",color:"#dc2626",fontSize:11,cursor:"pointer"}}>✕</button>
             </div>
           </div>
         </Card>
@@ -619,7 +648,7 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
 
       {showAddExtra?(
         <Card style={{borderColor:"rgba(74,222,128,.2)"}}>
-          <div style={{fontSize:12,color:"#4ade80",fontWeight:600,marginBottom:10}}>+ Nova receita extra</div>
+          <div style={{fontSize:12,color:"#15803d",fontWeight:600,marginBottom:10}}>+ Nova receita extra</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <Inp label="Descrição" value={novaExtra.desc} onChange={v=>setNovaExtra({...novaExtra,desc:v})} placeholder="Ex: Consulta particular, plantão extra..."/>
             <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8}}>
@@ -627,13 +656,13 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
               <Inp label="Dia receb." type="number" value={novaExtra.dia} onChange={v=>setNovaExtra({...novaExtra,dia:v})} placeholder="0"/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
-              <button onClick={()=>setShowAddExtra(false)} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"#555",fontSize:13,cursor:"pointer"}}>Cancelar</button>
-              <button onClick={addExtra} style={{padding:"10px",borderRadius:10,border:"none",background:"#4ade80",color:"#0a0a0f",fontSize:13,fontWeight:600,cursor:"pointer"}}>Adicionar</button>
+              <button onClick={()=>setShowAddExtra(false)} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(15,23,42,.1)",background:"transparent",color:"#64748b",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+              <button onClick={addExtra} style={{padding:"10px",borderRadius:10,border:"none",background:"#15803d",color:"#eef3f8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Adicionar</button>
             </div>
           </div>
         </Card>
       ):(
-        <button onClick={()=>setShowAddExtra(true)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(74,222,128,.3)",background:"transparent",color:"#4ade80",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+        <button onClick={()=>setShowAddExtra(true)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(74,222,128,.3)",background:"transparent",color:"#15803d",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
           + Adicionar receita extra
         </button>
       )}
@@ -646,33 +675,33 @@ function FixaCard({f, editing, setEditing, onUpd, onRemove}) {
   const isOpen = editing === f.id;
   return (
     <Card style={{
-      borderColor: f.status==="pago"?"rgba(74,222,128,.12)":f.extra?"rgba(251,191,36,.12)":"rgba(255,255,255,.07)",
-      background:  f.status==="pago"?"rgba(74,222,128,.03)":"rgba(255,255,255,.04)",
+      borderColor: f.status==="pago"?"rgba(74,222,128,.12)":f.extra?"rgba(251,191,36,.12)":"rgba(15,23,42,.07)",
+      background:  f.status==="pago"?"rgba(74,222,128,.03)":"rgba(15,23,42,.04)",
       marginBottom:8,
     }}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-            <span style={{fontSize:14,fontWeight:600,color:f.status==="pago"?"#4ade80":"#f0f0f5"}}>{f.nome}</span>
-            {f.extra&&<span style={{fontSize:9,color:"#fbbf24",background:"rgba(251,191,36,.12)",padding:"1px 6px",borderRadius:6}}>extra</span>}
+            <span style={{fontSize:14,fontWeight:600,color:f.status==="pago"?"#15803d":"#172033"}}>{f.nome}</span>
+            {f.extra&&<span style={{fontSize:9,color:"#b45309",background:"rgba(251,191,36,.12)",padding:"1px 6px",borderRadius:6}}>extra</span>}
           </div>
-          <div style={{fontSize:11,color:"#444",marginTop:1}}>{f.venc&&`${f.venc} · `}{f.cat}{f.duracao&&f.duracao!=="sempre"?` · ${f.duracao==="mes"?"só este mês":f.duracao}`:""}</div>
+          <div style={{fontSize:11,color:"#7c8799",marginTop:1}}>{f.venc&&`${f.venc} · `}{f.cat}{f.duracao&&f.duracao!=="sempre"?` · ${f.duracao==="mes"?"só este mês":f.duracao}`:""}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-          <span className="mono" style={{fontSize:14,color:f.status==="pago"?"#4ade80":"#888"}}>
+          <span className="mono" style={{fontSize:14,color:f.status==="pago"?"#15803d":"#64748b"}}>
             {Number(f.valor)>0?fmtBRL(f.valor):"—"}
           </span>
           <button onClick={()=>onUpd(f.id,"status",f.status==="pago"?"pendente":"pago")} style={{
             background:f.status==="pago"?"rgba(74,222,128,.12)":"rgba(251,191,36,.1)",
             border:`1px solid ${f.status==="pago"?"rgba(74,222,128,.25)":"rgba(251,191,36,.2)"}`,
             borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:11,
-            color:f.status==="pago"?"#4ade80":"#fbbf24",
+            color:f.status==="pago"?"#15803d":"#b45309",
           }}>{f.status==="pago"?"✓":"⏳"}</button>
         </div>
       </div>
       <button onClick={()=>setEditing(isOpen?null:f.id)} style={{marginTop:8,background:"transparent",
-        border:"1px solid rgba(255,255,255,.06)",borderRadius:8,padding:"4px 12px",
-        color:"#444",fontSize:11,cursor:"pointer",width:"100%"}}>
+        border:"1px solid rgba(15,23,42,.06)",borderRadius:8,padding:"4px 12px",
+        color:"#7c8799",fontSize:11,cursor:"pointer",width:"100%"}}>
         {isOpen?"▲ fechar":"▼ editar"}
       </button>
       {isOpen&&(
@@ -690,12 +719,12 @@ function FixaCard({f, editing, setEditing, onUpd, onRemove}) {
           </div>
           <Inp label="Data do pagamento" type="date" value={f.dataPgto||""} onChange={v=>onUpd(f.id,"dataPgto",v)}/>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            <label style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>Duração</label>
+            <label style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>Duração</label>
             <select value={f.duracao||"sempre"} onChange={e=>{
               const v=e.target.value;
               onUpd(f.id,"duracao",v);
               onUpd(f.id,"mesesRestantes",v==="sempre"?null:v==="mes"?1:Number(v.replace("x",""))||null);
-            }} style={{background:"#111118",border:"1px solid rgba(255,255,255,.08)",borderRadius:10,padding:"8px 12px",color:"#f0f0f5",fontSize:13,outline:"none"}}>
+            }} style={{background:"#ffffff",border:"1px solid rgba(15,23,42,.08)",borderRadius:10,padding:"8px 12px",color:"#172033",fontSize:13,outline:"none"}}>
               <option value="sempre">Todo mês (recorrente)</option>
               <option value="mes">Só este mês</option>
               <option value="2x">2 meses</option>
@@ -705,7 +734,7 @@ function FixaCard({f, editing, setEditing, onUpd, onRemove}) {
               <option value="12x">12 meses</option>
             </select>
             {f.duracao&&f.duracao!=="sempre"&&f.duracao!=="mes"&&(
-              <div style={{fontSize:10,color:"#555"}}>
+              <div style={{fontSize:10,color:"#64748b"}}>
                 {f.mesesRestantes!=null?`${f.mesesRestantes} mês(es) restante(s)`:""}
               </div>
             )}
@@ -713,7 +742,7 @@ function FixaCard({f, editing, setEditing, onUpd, onRemove}) {
           {f.extra&&(
             <button onClick={()=>onRemove(f.id)} style={{background:"rgba(239,68,68,.08)",
               border:"1px solid rgba(239,68,68,.15)",borderRadius:8,padding:"6px",
-              color:"#f87171",fontSize:12,cursor:"pointer"}}>
+              color:"#dc2626",fontSize:12,cursor:"pointer"}}>
               Remover esta despesa
             </button>
           )}
@@ -739,18 +768,18 @@ function FixasView({month,setMonth}) {
 
   const total=month.fixas.reduce((s,f)=>s+Number(f.valor||0),0);
   const pend=month.fixas.filter(f=>f.status==="pendente").length;
-  const grupos=[["pendente","⏳ Pendentes","#fbbf24"],["pago","✓ Pagas","#4ade80"]];
+  const grupos=[["pendente","⏳ Pendentes","#b45309"],["pago","✓ Pagas","#15803d"]];
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         <Card style={{background:"rgba(251,191,36,.04)",borderColor:"rgba(251,191,36,.12)"}}>
-          <div style={{fontSize:10,color:"#666"}}>Pendentes</div>
-          <div style={{fontSize:26,fontWeight:700,color:"#fbbf24"}}>{pend}</div>
+          <div style={{fontSize:10,color:"#64748b"}}>Pendentes</div>
+          <div style={{fontSize:26,fontWeight:700,color:"#b45309"}}>{pend}</div>
         </Card>
         <Card style={{background:"rgba(129,140,248,.04)",borderColor:"rgba(129,140,248,.12)"}}>
-          <div style={{fontSize:10,color:"#666"}}>Total do mês</div>
-          <div className="mono" style={{fontSize:18,color:"#818cf8",fontWeight:600}}>{fmtBRL(total)}</div>
+          <div style={{fontSize:10,color:"#64748b"}}>Total do mês</div>
+          <div className="mono" style={{fontSize:18,color:"#4f46e5",fontWeight:600}}>{fmtBRL(total)}</div>
         </Card>
       </div>
 
@@ -771,7 +800,7 @@ function FixasView({month,setMonth}) {
 
       {showAdd?(
         <Card style={{borderColor:"rgba(251,191,36,.2)"}}>
-          <div style={{fontSize:12,color:"#fbbf24",fontWeight:600,marginBottom:10}}>+ Nova despesa fixa (só este mês)</div>
+          <div style={{fontSize:12,color:"#b45309",fontWeight:600,marginBottom:10}}>+ Nova despesa fixa (só este mês)</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <Inp label="Nome" value={nova.nome} onChange={v=>setNova({...nova,nome:v})} placeholder="Ex: Assinatura Adobe"/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -780,17 +809,17 @@ function FixasView({month,setMonth}) {
             </div>
             <Inp label="Valor (R$)" type="number" value={nova.valor} onChange={v=>setNova({...nova,valor:v})} placeholder="0,00"/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
-              <Btn outline color="#555" onClick={()=>setShowAdd(false)}>Cancelar</Btn>
-              <Btn color="#fbbf24" onClick={addFixa} style={{color:"#0a0a0f"}}>Adicionar</Btn>
+              <Btn outline color="#64748b" onClick={()=>setShowAdd(false)}>Cancelar</Btn>
+              <Btn color="#b45309" onClick={addFixa} style={{color:"#eef3f8"}}>Adicionar</Btn>
             </div>
           </div>
         </Card>
       ):(
-        <button onClick={()=>setShowAdd(true)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(251,191,36,.3)",background:"transparent",color:"#fbbf24",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+        <button onClick={()=>setShowAdd(true)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(251,191,36,.3)",background:"transparent",color:"#b45309",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
           + Adicionar despesa fixa (este mês)
         </button>
       )}
-      <div style={{fontSize:10,color:"#2a2a35",textAlign:"center"}}>Despesas "extra" são exclusivas deste mês e podem ser removidas</div>
+      <div style={{fontSize:10,color:"#94a3b8",textAlign:"center"}}>Despesas "extra" são exclusivas deste mês e podem ser removidas</div>
     </div>
   );
 }
@@ -922,18 +951,18 @@ Retorne SOMENTE o array JSON.`;
         {CARDS.map(c=>{
           const sub=(month.cartoes[c.id]||[]).reduce((s,t)=>s+Number(t.valor||0),0);
           return (
-            <button key={c.id} onClick={()=>{setActiveCard(c.id);setImportMsg(null);setShowPdfUpload(false);setShowImport(false);setPdfFile(null);setPdfPreview([]);}} style={{flex:1,padding:"10px 4px",borderRadius:12,cursor:"pointer",border:`2px solid ${activeCard===c.id?c.color:"transparent"}`,background:activeCard===c.id?`${c.color}18`:"rgba(255,255,255,.03)"}}>
+            <button key={c.id} onClick={()=>{setActiveCard(c.id);setImportMsg(null);setShowPdfUpload(false);setShowImport(false);setPdfFile(null);setPdfPreview([]);}} style={{flex:1,padding:"10px 4px",borderRadius:12,cursor:"pointer",border:`2px solid ${activeCard===c.id?c.color:"transparent"}`,background:activeCard===c.id?`${c.color}18`:"rgba(15,23,42,.03)"}}>
               <div style={{fontSize:20}}>{c.emoji}</div>
-              <div style={{fontSize:10,color:activeCard===c.id?c.color:"#444",fontWeight:600,marginTop:2}}>{c.label.split(" ")[0]}</div>
-              <div className="mono" style={{fontSize:11,color:activeCard===c.id?c.color:"#333",marginTop:1}}>{fmtBRL(sub)}</div>
+              <div style={{fontSize:10,color:activeCard===c.id?c.color:"#7c8799",fontWeight:600,marginTop:2}}>{c.label.split(" ")[0]}</div>
+              <div className="mono" style={{fontSize:11,color:activeCard===c.id?c.color:"#94a3b8",marginTop:1}}>{fmtBRL(sub)}</div>
             </button>
           );
         })}
       </div>
       <Card style={{background:`${card.color}11`,borderColor:`${card.color}33`,padding:"12px 14px"}}>
         <div style={{display:"flex",justifyContent:"space-between"}}>
-          <div><div style={{fontSize:10,color:"#666"}}>{card.label}</div><div className="mono" style={{fontSize:22,color:card.color,fontWeight:600}}>{fmtBRL(total)}</div></div>
-          <div style={{textAlign:"right"}}><div style={{fontSize:10,color:"#666"}}>Total cartões</div><div className="mono" style={{fontSize:16,color:"#f87171"}}>{fmtBRL(totalAll)}</div></div>
+          <div><div style={{fontSize:10,color:"#64748b"}}>{card.label}</div><div className="mono" style={{fontSize:22,color:card.color,fontWeight:600}}>{fmtBRL(total)}</div></div>
+          <div style={{textAlign:"right"}}><div style={{fontSize:10,color:"#64748b"}}>Total cartões</div><div className="mono" style={{fontSize:16,color:"#dc2626"}}>{fmtBRL(totalAll)}</div></div>
         </div>
       </Card>
       {/* Import buttons */}
@@ -941,16 +970,16 @@ Retorne SOMENTE o array JSON.`;
         <button onClick={()=>{setShowPdfUpload(!showPdfUpload);setShowImport(false);setImportMsg(null);setPdfFile(null);setPdfPreview([]);setPdfProcessing(false);}} style={{flex:1,padding:"9px",borderRadius:10,border:`1px solid ${card.color}44`,background:showPdfUpload?`${card.color}18`:"transparent",color:card.color,fontSize:12,fontWeight:600,cursor:"pointer"}}>
           📄 Importar PDF
         </button>
-        <button onClick={()=>{setShowImport(!showImport);setShowPdfUpload(false);setImportMsg(null);}} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(255,255,255,.1)",background:showImport?"rgba(255,255,255,.06)":"transparent",color:"#888",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+        <button onClick={()=>{setShowImport(!showImport);setShowPdfUpload(false);setImportMsg(null);}} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(15,23,42,.1)",background:showImport?"rgba(15,23,42,.06)":"transparent",color:"#64748b",fontSize:12,fontWeight:600,cursor:"pointer"}}>
           { } JSON
         </button>
-        <button onClick={()=>setMonth({...month,cartoes:{...month.cartoes,[activeCard]:[]}})} style={{padding:"9px 14px",borderRadius:10,border:"1px solid rgba(239,68,68,.2)",background:"transparent",color:"#f87171",fontSize:11,cursor:"pointer"}}>
+        <button onClick={()=>setMonth({...month,cartoes:{...month.cartoes,[activeCard]:[]}})} style={{padding:"9px 14px",borderRadius:10,border:"1px solid rgba(239,68,68,.2)",background:"transparent",color:"#dc2626",fontSize:11,cursor:"pointer"}}>
           🗑
         </button>
       </div>
 
       {importMsg&&(
-        <div style={{padding:"8px 12px",borderRadius:10,background:importMsg.ok?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",fontSize:12,color:importMsg.ok?"#4ade80":"#f87171",border:`1px solid ${importMsg.ok?"rgba(74,222,128,.2)":"rgba(239,68,68,.2)"}`}}>
+        <div style={{padding:"8px 12px",borderRadius:10,background:importMsg.ok?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",fontSize:12,color:importMsg.ok?"#15803d":"#dc2626",border:`1px solid ${importMsg.ok?"rgba(74,222,128,.2)":"rgba(239,68,68,.2)"}`}}>
           {importMsg.txt}
         </div>
       )}
@@ -959,7 +988,7 @@ Retorne SOMENTE o array JSON.`;
       {showPdfUpload&&(
         <Card style={{borderColor:`${card.color}33`}}>
           <div style={{fontSize:12,color:card.color,fontWeight:600,marginBottom:8}}>{card.emoji} Importar fatura — {card.label}</div>
-          <div style={{fontSize:11,color:"#555",marginBottom:10,lineHeight:1.6}}>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:10,lineHeight:1.6}}>
             Selecione o PDF da fatura do cartão. O Claude vai ler, extrair e categorizar todos os lançamentos automaticamente.
           </div>
 
@@ -974,14 +1003,14 @@ Retorne SOMENTE o array JSON.`;
             <div style={{fontSize:28,marginBottom:6}}>{pdfFile?"📄":"📂"}</div>
             {pdfFile
               ?<><div style={{fontSize:13,fontWeight:600,color:card.color}}>{pdfFile.name}</div>
-                 <div style={{fontSize:10,color:"#555",marginTop:2}}>{(pdfFile.size/1024).toFixed(0)} KB · toque para trocar</div></>
-              :<><div style={{fontSize:13,color:"#555",fontWeight:500}}>Toque para selecionar o PDF</div>
-                 <div style={{fontSize:10,color:"#333",marginTop:2}}>Fatura {card.label}</div></>
+                 <div style={{fontSize:10,color:"#64748b",marginTop:2}}>{(pdfFile.size/1024).toFixed(0)} KB · toque para trocar</div></>
+              :<><div style={{fontSize:13,color:"#64748b",fontWeight:500}}>Toque para selecionar o PDF</div>
+                 <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Fatura {card.label}</div></>
             }
           </div>
 
           {pdfProcessing&&(
-            <div style={{marginTop:10,padding:"10px 12px",borderRadius:10,background:"rgba(124,106,247,.08)",border:"1px solid rgba(124,106,247,.2)",fontSize:12,color:"#a89cf7",textAlign:"center"}}>
+            <div style={{marginTop:10,padding:"10px 12px",borderRadius:10,background:"rgba(124,106,247,.08)",border:"1px solid rgba(124,106,247,.2)",fontSize:12,color:"#5b58d6",textAlign:"center"}}>
               ⚙️ {pdfMsg||"Processando..."}
             </div>
           )}
@@ -989,16 +1018,16 @@ Retorne SOMENTE o array JSON.`;
           {/* Preview dos lançamentos antes de confirmar */}
           {pdfPreview.length>0&&!pdfProcessing&&(
             <div style={{marginTop:10}}>
-              <div style={{fontSize:11,color:"#555",marginBottom:6,display:"flex",justifyContent:"space-between"}}>
+              <div style={{fontSize:11,color:"#64748b",marginBottom:6,display:"flex",justifyContent:"space-between"}}>
                 <span>{pdfPreview.length} lançamentos encontrados</span>
-                <span className="mono" style={{color:"#f87171"}}>R$ {pdfPreview.reduce((s,t)=>s+t.valor,0).toFixed(2)}</span>
+                <span className="mono" style={{color:"#dc2626"}}>R$ {pdfPreview.reduce((s,t)=>s+t.valor,0).toFixed(2)}</span>
               </div>
               <div style={{maxHeight:200,overflowY:"auto",display:"flex",flexDirection:"column",gap:4}}>
                 {pdfPreview.map((t,i)=>(
-                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:"rgba(255,255,255,.03)",borderRadius:8}}>
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:"rgba(15,23,42,.03)",borderRadius:8}}>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:11,color:"#f0f0f5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
-                      <div style={{fontSize:9,color:"#444"}}>{t.cat}{t.parcela?` · ${t.parcela}`:""}</div>
+                      <div style={{fontSize:11,color:"#172033",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
+                      <div style={{fontSize:9,color:"#7c8799"}}>{t.cat}{t.parcela?` · ${t.parcela}`:""}</div>
                     </div>
                     <span className="mono" style={{fontSize:11,color:card.color,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
                   </div>
@@ -1008,9 +1037,9 @@ Retorne SOMENTE o array JSON.`;
           )}
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
-            <button onClick={()=>{setShowPdfUpload(false);setPdfFile(null);setPdfPreview([]);}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"#555",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+            <button onClick={()=>{setShowPdfUpload(false);setPdfFile(null);setPdfPreview([]);}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(15,23,42,.08)",background:"transparent",color:"#64748b",fontSize:13,cursor:"pointer"}}>Cancelar</button>
             <button onClick={pdfPreview.length>0?confirmPdfImport:(!pdfFile?(()=>pdfInputRef.current?.click()):processPdf)} disabled={pdfProcessing}
-              style={{padding:"10px",borderRadius:10,border:"none",background:!pdfFile||pdfProcessing?"#1a1a2a":card.color,color:!pdfFile||pdfProcessing?"#333":"#fff",fontSize:13,fontWeight:600,cursor:!pdfFile||pdfProcessing?"not-allowed":"pointer"}}>
+              style={{padding:"10px",borderRadius:10,border:"none",background:!pdfFile||pdfProcessing?"#1a1a2a":card.color,color:!pdfFile||pdfProcessing?"#94a3b8":"#fff",fontSize:13,fontWeight:600,cursor:!pdfFile||pdfProcessing?"not-allowed":"pointer"}}>
               {pdfProcessing?"Processando...":pdfPreview.length>0?"✅ Confirmar":"🤖 Processar"}
             </button>
           </div>
@@ -1019,21 +1048,21 @@ Retorne SOMENTE o array JSON.`;
 
       {/* JSON Import panel */}
       {showImport&&(
-        <Card style={{borderColor:"rgba(255,255,255,.1)"}}>
-          <div style={{fontSize:12,color:"#888",fontWeight:600,marginBottom:8}}>Importar via JSON</div>
+        <Card style={{borderColor:"rgba(15,23,42,.1)"}}>
+          <div style={{fontSize:12,color:"#64748b",fontWeight:600,marginBottom:8}}>Importar via JSON</div>
           <textarea value={importJson} onChange={e=>setImportJson(e.target.value)}
             placeholder='{"tipo":"cartao","cartao":"inter","lancamentos":[...]}'
-            style={{width:"100%",minHeight:80,background:"rgba(0,0,0,.4)",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,padding:10,color:"#f0f0f5",fontSize:10,outline:"none",resize:"vertical",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5}}/>
+            style={{width:"100%",minHeight:80,background:"rgba(0,0,0,.4)",border:"1px solid rgba(15,23,42,.1)",borderRadius:10,padding:10,color:"#172033",fontSize:10,outline:"none",resize:"vertical",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5}}/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
-            <button onClick={()=>{setShowImport(false);setImportJson("");}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"#555",fontSize:13,cursor:"pointer"}}>Cancelar</button>
-            <button onClick={doImport} style={{padding:"10px",borderRadius:10,border:"none",background:"#555",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Importar</button>
+            <button onClick={()=>{setShowImport(false);setImportJson("");}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(15,23,42,.08)",background:"transparent",color:"#64748b",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+            <button onClick={doImport} style={{padding:"10px",borderRadius:10,border:"none",background:"#64748b",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Importar</button>
           </div>
         </Card>
       )}
 
       {/* Contador */}
       {items.length>0&&(
-        <div style={{fontSize:10,color:"#444",textAlign:"center",padding:"2px 0"}}>
+        <div style={{fontSize:10,color:"#7c8799",textAlign:"center",padding:"2px 0"}}>
           {items.length} lançamento{items.length>1?"s":""} · toque na categoria para editar
         </div>
       )}
@@ -1043,12 +1072,12 @@ Retorne SOMENTE o array JSON.`;
           {/* Linha 1: descrição + valor + remover */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,color:"#f0f0f5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
-              <div style={{fontSize:10,color:"#555",marginTop:1}}>{t.data||""}{t.parcela?` · Parcela ${t.parcela}`:""}</div>
+              <div style={{fontSize:13,color:"#172033",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
+              <div style={{fontSize:10,color:"#64748b",marginTop:1}}>{t.data||""}{t.parcela?` · Parcela ${t.parcela}`:""}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
               <span className="mono" style={{fontSize:14,color:card.color,fontWeight:600}}>{fmtBRL(t.valor)}</span>
-              <button onClick={()=>remove(t.id)} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:6,padding:"3px 7px",color:"#f87171",fontSize:11,cursor:"pointer"}}>✕</button>
+              <button onClick={()=>remove(t.id)} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:6,padding:"3px 7px",color:"#dc2626",fontSize:11,cursor:"pointer"}}>✕</button>
             </div>
           </div>
           {/* Linha 2: categoria editável */}
@@ -1077,7 +1106,7 @@ Retorne SOMENTE o array JSON.`;
             </div>
             <Inp label="Valor (R$)" type="number" value={form.valor} onChange={v=>setForm({...form,valor:v})} placeholder="0,00"/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
-              <Btn outline color="#555" onClick={()=>setShowForm(false)}>Cancelar</Btn>
+              <Btn outline color="#64748b" onClick={()=>setShowForm(false)}>Cancelar</Btn>
               <Btn color={card.color} onClick={add}>Salvar</Btn>
             </div>
           </div>
@@ -1086,7 +1115,7 @@ Retorne SOMENTE o array JSON.`;
       <button onClick={()=>setShowForm(!showForm)} style={{padding:"12px",borderRadius:12,border:`1px dashed ${card.color}55`,background:"transparent",color:card.color,fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
         + Adicionar lançamento
       </button>
-      <div style={{fontSize:10,color:"#1e1e28",textAlign:"center"}}>💡 Envie o extrato PDF/CSV ao Claude para importar automaticamente</div>
+      <div style={{fontSize:10,color:"#cbd5e1",textAlign:"center"}}>💡 Envie o extrato PDF/CSV ao Claude para importar automaticamente</div>
     </div>
   );
 }
@@ -1183,26 +1212,26 @@ Retorne SOMENTE o array JSON.`;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <Card style={{background:"rgba(34,211,238,.05)",borderColor:"rgba(34,211,238,.15)"}}>
-        <div style={{fontSize:10,color:"#666"}}>Total Pix / Variáveis</div>
-        <div className="mono" style={{fontSize:24,color:"#22d3ee",fontWeight:600}}>{fmtBRL(total)}</div>
+        <div style={{fontSize:10,color:"#64748b"}}>Total Pix / Variáveis</div>
+        <div className="mono" style={{fontSize:24,color:"#0e7490",fontWeight:600}}>{fmtBRL(total)}</div>
       </Card>
       {(month.variaveis||[]).map(p=>(
         <Card key={p.id} style={{padding:"10px 14px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,color:"#f0f0f5"}}>{p.desc}</div>
-              <div style={{fontSize:11,color:"#444"}}>{p.cat} · {p.banco} · {p.data}</div>
+              <div style={{fontSize:13,color:"#172033"}}>{p.desc}</div>
+              <div style={{fontSize:11,color:"#7c8799"}}>{p.cat} · {p.banco} · {p.data}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:8,flexShrink:0}}>
-              <span className="mono" style={{fontSize:14,color:"#22d3ee",fontWeight:500}}>{fmtBRL(p.valor)}</span>
-              <button onClick={()=>setMonth({...month,variaveis:(month.variaveis||[]).filter(x=>x.id!==p.id)})} style={{background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.15)",borderRadius:6,padding:"3px 7px",color:"#f87171",fontSize:11,cursor:"pointer"}}>✕</button>
+              <span className="mono" style={{fontSize:14,color:"#0e7490",fontWeight:500}}>{fmtBRL(p.valor)}</span>
+              <button onClick={()=>setMonth({...month,variaveis:(month.variaveis||[]).filter(x=>x.id!==p.id)})} style={{background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.15)",borderRadius:6,padding:"3px 7px",color:"#dc2626",fontSize:11,cursor:"pointer"}}>✕</button>
             </div>
           </div>
         </Card>
       ))}
       {showForm&&(
         <Card style={{borderColor:"rgba(34,211,238,.2)"}}>
-          <div style={{fontSize:12,color:"#22d3ee",fontWeight:600,marginBottom:10}}>📱 Novo Pix / Variável</div>
+          <div style={{fontSize:12,color:"#0e7490",fontWeight:600,marginBottom:10}}>📱 Novo Pix / Variável</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <Inp label="Descrição" value={form.desc} onChange={v=>setForm({...form,desc:v})} placeholder="Ex: Farmácia"/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -1214,13 +1243,13 @@ Retorne SOMENTE o array JSON.`;
               <Inp label="Valor (R$)" type="number" value={form.valor} onChange={v=>setForm({...form,valor:v})} placeholder="0,00"/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
-              <Btn outline color="#555" onClick={()=>setShowForm(false)}>Cancelar</Btn>
-              <Btn color="#22d3ee" onClick={add} style={{color:"#0a0a0f"}}>Salvar</Btn>
+              <Btn outline color="#64748b" onClick={()=>setShowForm(false)}>Cancelar</Btn>
+              <Btn color="#0e7490" onClick={add} style={{color:"#eef3f8"}}>Salvar</Btn>
             </div>
           </div>
         </Card>
       )}
-      <button onClick={()=>setShowForm(!showForm)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(34,211,238,.35)",background:"transparent",color:"#22d3ee",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+      <button onClick={()=>setShowForm(!showForm)} style={{padding:"12px",borderRadius:12,border:"1px dashed rgba(34,211,238,.35)",background:"transparent",color:"#0e7490",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
         + Adicionar pagamento
       </button>
     </div>
@@ -1229,22 +1258,22 @@ Retorne SOMENTE o array JSON.`;
 
 const TIPOS_INVEST = ["Renda Fixa","Fundo","Ações","FIIs","Cripto","Previdência","Internacional","Outro"];
 const CORES_TIPO = {
-  "Renda Fixa":"#4ade80","Fundo":"#818cf8","Ações":"#f97316","FIIs":"#fbbf24",
-  "Cripto":"#e879f9","Previdência":"#22d3ee","Internacional":"#38bdf8","Outro":"#94a3b8",
+  "Renda Fixa":"#15803d","Fundo":"#4f46e5","Ações":"#c2410c","FIIs":"#b45309",
+  "Cripto":"#e879f9","Previdência":"#0e7490","Internacional":"#38bdf8","Outro":"#94a3b8",
 };
 // Risco estimado por tipo de ativo (1=baixo risco, 5=muito alto) — heurística simples,
 // não é uma análise de risco profissional, só uma referência dentro do app.
 const RISCO_TIPO = {
-  "Renda Fixa":   {score:1, label:"Baixo",      color:"#4ade80"},
-  "Previdência":  {score:1, label:"Baixo",      color:"#4ade80"},
-  "FIIs":         {score:3, label:"Médio",      color:"#fbbf24"},
-  "Fundo":        {score:3, label:"Médio",      color:"#fbbf24"},
-  "Outro":        {score:3, label:"Médio",      color:"#fbbf24"},
-  "Internacional":{score:4, label:"Alto",       color:"#f97316"},
-  "Ações":        {score:5, label:"Muito alto", color:"#f87171"},
-  "Cripto":       {score:5, label:"Muito alto", color:"#f87171"},
+  "Renda Fixa":   {score:1, label:"Baixo",      color:"#15803d"},
+  "Previdência":  {score:1, label:"Baixo",      color:"#15803d"},
+  "FIIs":         {score:3, label:"Médio",      color:"#b45309"},
+  "Fundo":        {score:3, label:"Médio",      color:"#b45309"},
+  "Outro":        {score:3, label:"Médio",      color:"#b45309"},
+  "Internacional":{score:4, label:"Alto",       color:"#c2410c"},
+  "Ações":        {score:5, label:"Muito alto", color:"#dc2626"},
+  "Cripto":       {score:5, label:"Muito alto", color:"#dc2626"},
 };
-const RISCO_DEFAULT = {score:3, label:"Médio", color:"#fbbf24"};
+const RISCO_DEFAULT = {score:3, label:"Médio", color:"#b45309"};
 
 function InvestView({month,setMonth,mesKey}) {
   const [editing,setEditing]=useState(null);
@@ -1252,7 +1281,7 @@ function InvestView({month,setMonth,mesKey}) {
   const [showImport,setShowImport]=useState(false);
   const [importJson,setImportJson]=useState("");
   const [importMsg,setImportMsg]=useState(null);
-  const [nova,setNova]=useState({produto:"",tipo:TIPOS_INVEST[0],aplicado:"",atual:""});
+  const [nova,setNova]=useState({produto:"",tipo:TIPOS_INVEST[0],atual:"",aporte:"",resgate:""});
   const [allMonths,setAllMonths]=useState({});
   const [loadingHistory,setLoadingHistory]=useState(true);
 
@@ -1270,14 +1299,14 @@ function InvestView({month,setMonth,mesKey}) {
       setAllMonths(map);
       setLoadingHistory(false);
     });
-  },[mesKey]);
+  },[mesKey,month]);
 
-  const upd=(id,f,v)=>setMonth({...month,investimentos:month.investimentos.map(i=>i.id===id?{...i,[f]:(f==="aplicado"||f==="atual")?Number(v)||0:v}:i)});
+  const upd=(id,f,v)=>setMonth({...month,investimentosFotoConfirmada:f==="atual"?true:month.investimentosFotoConfirmada,investimentos:month.investimentos.map(i=>i.id===id?{...i,[f]:(["atual","aporte","resgate"].includes(f))?Number(v)||0:v}:i)});
   const remove=id=>setMonth({...month,investimentos:month.investimentos.filter(i=>i.id!==id)});
   const addInv=()=>{
     if(!nova.produto) return;
-    setMonth({...month,investimentos:[...month.investimentos,{id:Date.now(),produto:nova.produto,tipo:nova.tipo,aplicado:Number(nova.aplicado)||0,atual:Number(nova.atual)||0}]});
-    setNova({produto:"",tipo:TIPOS_INVEST[0],aplicado:"",atual:""});
+    setMonth({...month,investimentosFotoConfirmada:true,investimentos:[...month.investimentos,{id:Date.now(),produto:nova.produto,tipo:nova.tipo,atual:Number(nova.atual)||0,aporte:Number(nova.aporte)||0,resgate:Number(nova.resgate)||0}]});
+    setNova({produto:"",tipo:TIPOS_INVEST[0],atual:"",aporte:"",resgate:""});
     setShowAdd(false);
   };
   const doImportInvest=()=>{
@@ -1289,11 +1318,12 @@ function InvestView({month,setMonth,mesKey}) {
         id:Date.now()+i,
         produto:a.produto||a.nome||"Sem nome",
         tipo:TIPOS_INVEST.includes(a.tipo)?a.tipo:"Outro",
-        aplicado:Number(a.aplicado)||0,
         atual:Number(a.atual)||0,
+        aporte:Number(a.aporte)||0,
+        resgate:Number(a.resgate)||0,
       }));
-      setMonth({...month,investimentos:novos});
-      setImportMsg({ok:true,txt:`✓ ${novos.length} ativos importados (substituiu a carteira deste mês)`});
+      setMonth({...month,investimentosFotoConfirmada:true,investimentos:novos});
+      setImportMsg({ok:true,txt:`✓ Fotografia registrada com ${novos.length} ativos`});
       setImportJson("");
       setShowImport(false);
     }catch(e){
@@ -1301,10 +1331,20 @@ function InvestView({month,setMonth,mesKey}) {
     }
   };
 
-  const totalApl=month.investimentos.reduce((s,i)=>s+Number(i.aplicado||0),0);
   const totalAtu=month.investimentos.reduce((s,i)=>s+Number(i.atual||0),0);
-  const rend=totalAtu-totalApl;
-  const rendPct=totalApl>0?(rend/totalApl*100):0;
+  const totalAportes=month.investimentos.reduce((s,i)=>s+Number(i.aporte||0),0);
+  const totalResgates=month.investimentos.reduce((s,i)=>s+Number(i.resgate||0),0);
+  const prevKey=prevMesKey(mesKey);
+  const prevMonth=allMonths[prevKey];
+  const prevFotoConfirmada=hasFotoInvestimentos(prevMonth);
+  const prevTotal=(prevMonth?.investimentos||[]).reduce((s,i)=>s+Number(i.atual||0),0);
+  const prevAportes=(prevMonth?.investimentos||[]).reduce((s,i)=>s+Number(i.aporte||0),0);
+  const prevResgates=(prevMonth?.investimentos||[]).reduce((s,i)=>s+Number(i.resgate||0),0);
+  const fotoConfirmada=hasFotoInvestimentos(month);
+  const rend=fotoConfirmada&&prevFotoConfirmada?totalAtu-prevTotal-prevAportes+prevResgates:null;
+  const rendPct=rend!==null&&prevTotal>0?(rend/prevTotal*100):null;
+  const [prevY,prevM]=prevKey.split("-");
+  const periodoRendimento=`${MESES[Number(prevM)-1]}/${prevY}`;
 
   // Alocação por tipo
   const porTipo={};
@@ -1317,9 +1357,9 @@ function InvestView({month,setMonth,mesKey}) {
     : 0;
   const riscoRound = totalAtu>0 ? Math.min(5,Math.max(1,Math.round(riscoScoreRaw))) : 0;
   const RISCO_LABELS=["","Baixo","Baixo-médio","Médio","Alto","Muito alto"];
-  const RISCO_CORES=["","#4ade80","#a3e635","#fbbf24","#f97316","#f87171"];
+  const RISCO_CORES=["","#15803d","#a3e635","#b45309","#c2410c","#dc2626"];
   const riscoLabel = RISCO_LABELS[riscoRound]||"—";
-  const riscoCor = RISCO_CORES[riscoRound]||"#888";
+  const riscoCor = RISCO_CORES[riscoRound]||"#64748b";
   const ativosOrdenados=[...month.investimentos].sort((a,b)=>Number(b.atual||0)-Number(a.atual||0));
   const maiorAtivo=ativosOrdenados[0];
   const pctMaiorAtivo=maiorAtivo&&totalAtu>0?Number(maiorAtivo.atual||0)/totalAtu*100:0;
@@ -1331,11 +1371,9 @@ function InvestView({month,setMonth,mesKey}) {
   const mesesOrdenados=Object.keys(allMonths).sort();
   const mesesLabel2=mesesOrdenados.map(k=>{ const[y,m]=k.split("-"); return `${MESES[+m-1]}/${String(y).slice(-2)}`; });
   const getAtuT=md=>(md?.investimentos||[]).reduce((s,i)=>s+Number(i.atual||0),0);
-  const getAplT=md=>(md?.investimentos||[]).reduce((s,i)=>s+Number(i.aplicado||0),0);
   const atuMeses=mesesOrdenados.map(k=>getAtuT(allMonths[k]));
-  const aplMeses=mesesOrdenados.map(k=>getAplT(allMonths[k]));
-  const maxHist=Math.max(...atuMeses,...aplMeses,1);
-  const mesesComDado=mesesOrdenados.filter((k,i)=>atuMeses[i]>0||aplMeses[i]>0).length;
+  const maxHist=Math.max(...atuMeses,1);
+  const mesesComDado=mesesOrdenados.filter((k,i)=>atuMeses[i]>0).length;
 
   // Projeção — extrapola a taxa média de crescimento mensal observada no histórico
   const idxComDado=atuMeses.map((v,i)=>v>0?i:-1).filter(i=>i>=0);
@@ -1355,52 +1393,60 @@ function InvestView({month,setMonth,mesKey}) {
   }
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        <Card style={{background:"rgba(167,139,250,.05)",borderColor:"rgba(167,139,250,.15)"}}>
-          <div style={{fontSize:10,color:"#666"}}>Total Aplicado</div>
-          <div className="mono" style={{fontSize:18,color:"#a78bfa",fontWeight:600}}>{fmtBRL(totalApl)}</div>
-        </Card>
+    <div className="view-stack">
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
         <Card style={{background:"rgba(129,140,248,.05)",borderColor:"rgba(129,140,248,.15)"}}>
-          <div style={{fontSize:10,color:"#666"}}>Valor Atual</div>
-          <div className="mono" style={{fontSize:18,color:"#818cf8",fontWeight:600}}>{fmtBRL(totalAtu)}</div>
+          <div style={{fontSize:10,color:"#64748b"}}>Fotografia em 01/{mesKey.split("-")[1]}</div>
+          <div className="mono" style={{fontSize:18,color:"#4f46e5",fontWeight:600}}>{fmtBRL(totalAtu)}</div>
+        </Card>
+        <Card style={{background:"rgba(109,40,217,.05)",borderColor:"rgba(109,40,217,.15)"}}>
+          <div style={{fontSize:10,color:"#64748b"}}>Aportes no mês</div>
+          <div className="mono" style={{fontSize:18,color:"#6d28d9",fontWeight:600}}>{fmtBRL(totalAportes)}</div>
+        </Card>
+        <Card style={{background:"rgba(14,116,144,.05)",borderColor:"rgba(14,116,144,.15)"}}>
+          <div style={{fontSize:10,color:"#64748b"}}>Resgates no mês</div>
+          <div className="mono" style={{fontSize:18,color:"#0e7490",fontWeight:600}}>{fmtBRL(totalResgates)}</div>
         </Card>
       </div>
 
-      <Card style={{background:rend>=0?"rgba(74,222,128,.05)":"rgba(239,68,68,.05)",borderColor:rend>=0?"rgba(74,222,128,.15)":"rgba(239,68,68,.15)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <Card style={{background:rend===null?"#f8fafc":rend>=0?"rgba(21,128,61,.06)":"rgba(220,38,38,.05)",borderColor:rend===null?"#dfe6ef":rend>=0?"rgba(21,128,61,.18)":"rgba(220,38,38,.18)"}}>
+        {rend===null?(
           <div>
-            <div style={{fontSize:10,color:"#666"}}>Rendimento total</div>
-            <div className="mono" style={{fontSize:20,color:rend>=0?"#4ade80":"#f87171",fontWeight:700}}>{fmtBRL(rend)}</div>
+            <div style={{fontSize:12,fontWeight:700,color:"#172033"}}>Rendimento de {periodoRendimento} ainda não calculado</div>
+            <div style={{fontSize:11,color:"#64748b",marginTop:4}}>Registre a fotografia de {prevKey.split("-")[1]}/{prevKey.split("-")[0]} para comparar os saldos corretamente.</div>
           </div>
-          {totalApl>0&&(
-            <div style={{fontSize:15,fontWeight:700,color:rend>=0?"#4ade80":"#f87171",background:rend>=0?"rgba(74,222,128,.12)":"rgba(239,68,68,.12)",padding:"6px 12px",borderRadius:10}}>
-              {rendPct>=0?"+":""}{rendPct.toFixed(1)}%
+        ):(
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+            <div>
+              <div style={{fontSize:10,color:"#64748b"}}>Rendimento de {periodoRendimento}</div>
+              <div className="mono" style={{fontSize:20,color:rend>=0?"#15803d":"#dc2626",fontWeight:700}}>{fmtBRL(rend)}</div>
+              <div style={{fontSize:10,color:"#64748b",marginTop:3}}>Variação da carteira, descontando aportes e considerando resgates</div>
             </div>
-          )}
-        </div>
+            {rendPct!==null&&<div style={{fontSize:15,fontWeight:700,color:rend>=0?"#15803d":"#dc2626",background:rend>=0?"rgba(21,128,61,.10)":"rgba(220,38,38,.10)",padding:"6px 12px",borderRadius:10}}>{rendPct>=0?"+":""}{rendPct.toFixed(2)}%</div>}
+          </div>
+        )}
       </Card>
 
       {/* Risco da carteira */}
       {month.investimentos.length>0&&totalAtu>0&&(
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>
+            <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>
               Risco da carteira
             </div>
             <span style={{fontSize:12,fontWeight:700,color:riscoCor}}>{riscoLabel}</span>
           </div>
           <div style={{display:"flex",gap:3,marginBottom:concentrado?10:8}}>
             {[1,2,3,4,5].map(n=>(
-              <div key={n} style={{flex:1,height:6,borderRadius:3,background:n<=riscoRound?riscoCor:"rgba(255,255,255,.06)"}}/>
+              <div key={n} style={{flex:1,height:6,borderRadius:3,background:n<=riscoRound?riscoCor:"rgba(15,23,42,.06)"}}/>
             ))}
           </div>
           {concentrado&&(
-            <div style={{padding:"7px 10px",borderRadius:8,background:"rgba(251,191,36,.08)",border:"1px solid rgba(251,191,36,.2)",fontSize:11,color:"#fbbf24",marginBottom:8}}>
+            <div style={{padding:"7px 10px",borderRadius:8,background:"rgba(251,191,36,.08)",border:"1px solid rgba(251,191,36,.2)",fontSize:11,color:"#b45309",marginBottom:8}}>
               ⚠ Concentração alta —{pctMaiorAtivo>40&&` ${maiorAtivo.produto} é ${pctMaiorAtivo.toFixed(0)}% da carteira`}{pctMaiorAtivo>40&&pctMaiorTipo>55?" · ":""}{pctMaiorTipo>55&&` ${maiorTipo[0]} concentra ${pctMaiorTipo.toFixed(0)}%`}
             </div>
           )}
-          <div style={{fontSize:9,color:"#444",lineHeight:1.6}}>
+          <div style={{fontSize:9,color:"#7c8799",lineHeight:1.6}}>
             Estimativa por tipo de ativo (Renda Fixa/Previdência = baixo; Fundos/FIIs = médio; Internacional = alto; Ações/Cripto = muito alto), ponderada pelo valor de cada posição. Não substitui uma análise profissional.
           </div>
         </Card>
@@ -1409,26 +1455,26 @@ function InvestView({month,setMonth,mesKey}) {
       {/* Alocação por tipo */}
       {alocacao.length>1&&(
         <Card>
-          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
             Alocação por tipo
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {alocacao.map(([tipo,val])=>{
               const pct=totalAtu>0?(val/totalAtu*100):0;
-              const cor=CORES_TIPO[tipo]||"#7c6af7";
+              const cor=CORES_TIPO[tipo]||"#5b58d6";
               return (
                 <div key={tipo}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
                     <div style={{display:"flex",alignItems:"center",gap:7}}>
                       <div style={{width:9,height:9,borderRadius:3,background:cor,flexShrink:0}}/>
-                      <span style={{fontSize:12,color:"#ccc"}}>{tipo}</span>
+                      <span style={{fontSize:12,color:"#334155"}}>{tipo}</span>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{fontSize:10,color:"#444"}}>{pct.toFixed(1)}%</span>
+                      <span style={{fontSize:10,color:"#7c8799"}}>{pct.toFixed(1)}%</span>
                       <span className="mono" style={{fontSize:12,color:cor,fontWeight:600,minWidth:72,textAlign:"right"}}>{fmtBRL(val)}</span>
                     </div>
                   </div>
-                  <div style={{height:5,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden"}}>
+                  <div style={{height:5,background:"rgba(15,23,42,.05)",borderRadius:3,overflow:"hidden"}}>
                     <div style={{height:"100%",width:`${pct}%`,background:cor,borderRadius:3,transition:"width .5s"}}/>
                   </div>
                 </div>
@@ -1440,13 +1486,13 @@ function InvestView({month,setMonth,mesKey}) {
 
       {/* Evolução mensal */}
       <Card>
-        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
+        <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
           Evolução — 12 meses
         </div>
         {loadingHistory?(
-          <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Carregando…</div>
+          <div style={{textAlign:"center",padding:"20px 0",color:"#94a3b8",fontSize:12}}>Carregando…</div>
         ):mesesComDado<2?(
-          <div style={{textAlign:"center",padding:"12px 0",color:"#333",fontSize:11}}>Ainda não há histórico suficiente</div>
+          <div style={{textAlign:"center",padding:"12px 0",color:"#94a3b8",fontSize:11}}>Ainda não há histórico suficiente</div>
         ):(
           <>
             <div style={{display:"flex",alignItems:"flex-end",gap:4,height:120}}>
@@ -1454,52 +1500,44 @@ function InvestView({month,setMonth,mesKey}) {
                 const isCur=k===mesKey;
                 return (
                   <div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                    <div style={{width:"100%",display:"flex",gap:1,alignItems:"flex-end",height:100}}>
-                      <div style={{flex:1,background:"#818cf888",borderRadius:"3px 3px 0 0",height:`${aplMeses[i]/maxHist*100}%`,minHeight:aplMeses[i]>0?2:0}}/>
-                      <div style={{flex:1,background:"#a78bfa88",borderRadius:"3px 3px 0 0",height:`${atuMeses[i]/maxHist*100}%`,minHeight:atuMeses[i]>0?2:0}}/>
+                    <div style={{width:"100%",display:"flex",alignItems:"flex-end",height:100}}>
+                      <div title={fmtBRL(atuMeses[i])} style={{width:"100%",background:isCur?"#5b58d6":"#a7b0c4",borderRadius:"5px 5px 0 0",height:`${atuMeses[i]/maxHist*100}%`,minHeight:atuMeses[i]>0?3:0}}/>
                     </div>
-                    <span style={{fontSize:8,color:isCur?"#f0f0f5":"#444",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
+                    <span style={{fontSize:8,color:isCur?"#172033":"#7c8799",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
                   </div>
                 );
               })}
             </div>
-            <div style={{display:"flex",gap:12,marginTop:8,justifyContent:"center"}}>
-              {[["#818cf8","Aplicado"],["#a78bfa","Valor atual"]].map(([cor,l])=>(
-                <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
-                  <div style={{width:8,height:8,borderRadius:2,background:cor}}/>
-                  <span style={{fontSize:10,color:"#555"}}>{l}</span>
-                </div>
-              ))}
-            </div>
+            <div style={{fontSize:10,color:"#64748b",marginTop:8,textAlign:"center"}}>Cada barra representa a fotografia registrada no início do mês.</div>
           </>
         )}
       </Card>
 
       {/* Projeção */}
       <Card>
-        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
+        <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
           Projeção
         </div>
         {loadingHistory?(
-          <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Carregando…</div>
+          <div style={{textAlign:"center",padding:"20px 0",color:"#94a3b8",fontSize:12}}>Carregando…</div>
         ):!projecao?(
-          <div style={{textAlign:"center",padding:"12px 0",color:"#333",fontSize:11}}>Histórico insuficiente pra projetar — precisa de pelo menos 2 meses com saldo</div>
+          <div style={{textAlign:"center",padding:"12px 0",color:"#94a3b8",fontSize:11}}>Histórico insuficiente pra projetar — precisa de pelo menos 2 meses com saldo</div>
         ):(
           <>
-            <div style={{fontSize:11,color:"#555",marginBottom:10}}>
+            <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>
               Com base no crescimento médio dos últimos {projecao.meses} mês(es) (~{(projecao.taxaMensal*100).toFixed(2)}% ao mês):
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              <div style={{textAlign:"center",background:"rgba(255,255,255,.03)",borderRadius:10,padding:"10px 4px"}}>
-                <div style={{fontSize:9,color:"#444",textTransform:"uppercase",letterSpacing:.5}}>Em 6 meses</div>
-                <div className="mono" style={{fontSize:15,color:"#a78bfa",fontWeight:600,marginTop:3}}>{fmtBRL(projecao.proj6)}</div>
+              <div style={{textAlign:"center",background:"rgba(15,23,42,.03)",borderRadius:10,padding:"10px 4px"}}>
+                <div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase",letterSpacing:.5}}>Em 6 meses</div>
+                <div className="mono" style={{fontSize:15,color:"#6d28d9",fontWeight:600,marginTop:3}}>{fmtBRL(projecao.proj6)}</div>
               </div>
-              <div style={{textAlign:"center",background:"rgba(255,255,255,.03)",borderRadius:10,padding:"10px 4px"}}>
-                <div style={{fontSize:9,color:"#444",textTransform:"uppercase",letterSpacing:.5}}>Em 12 meses</div>
-                <div className="mono" style={{fontSize:15,color:"#a78bfa",fontWeight:600,marginTop:3}}>{fmtBRL(projecao.proj12)}</div>
+              <div style={{textAlign:"center",background:"rgba(15,23,42,.03)",borderRadius:10,padding:"10px 4px"}}>
+                <div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase",letterSpacing:.5}}>Em 12 meses</div>
+                <div className="mono" style={{fontSize:15,color:"#6d28d9",fontWeight:600,marginTop:3}}>{fmtBRL(projecao.proj12)}</div>
               </div>
             </div>
-            <div style={{fontSize:9,color:"#333",marginTop:10,lineHeight:1.6}}>
+            <div style={{fontSize:9,color:"#94a3b8",marginTop:10,lineHeight:1.6}}>
               Extrapolação simples do seu histórico dentro do app — não considera novos aportes, mudanças de mercado ou rebalanceamento. Não é recomendação de investimento.
             </div>
           </>
@@ -1507,44 +1545,38 @@ function InvestView({month,setMonth,mesKey}) {
       </Card>
 
       {/* Lista de ativos */}
-      <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,padding:"4px 0 2px"}}>
+      <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,padding:"4px 0 2px"}}>
         Ativos
       </div>
       {month.investimentos.map(inv=>{
         const isOpen=editing===inv.id;
-        const rendInv=Number(inv.atual||0)-Number(inv.aplicado||0);
-        const cor=CORES_TIPO[inv.tipo]||"#a78bfa";
+        const cor=CORES_TIPO[inv.tipo]||"#6d28d9";
         return (
           <Card key={inv.id}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,fontWeight:600,color:cor}}>{inv.produto||"Sem nome"}</div>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
-                  <span style={{fontSize:10,color:"#444"}}>{inv.tipo}</span>
+                  <span style={{fontSize:10,color:"#7c8799"}}>{inv.tipo}</span>
                   <span style={{fontSize:9,fontWeight:600,color:(RISCO_TIPO[inv.tipo]||RISCO_DEFAULT).color,background:`${(RISCO_TIPO[inv.tipo]||RISCO_DEFAULT).color}18`,padding:"1px 6px",borderRadius:6}}>
                     {(RISCO_TIPO[inv.tipo]||RISCO_DEFAULT).label}
                   </span>
                 </div>
               </div>
-              <button onClick={()=>setEditing(isOpen?null:inv.id)} style={{background:"transparent",border:"1px solid rgba(255,255,255,.06)",borderRadius:8,padding:"4px 10px",color:"#444",fontSize:11,cursor:"pointer",flexShrink:0}}>
+              <button onClick={()=>setEditing(isOpen?null:inv.id)} style={{background:"transparent",border:"1px solid rgba(15,23,42,.06)",borderRadius:8,padding:"4px 10px",color:"#7c8799",fontSize:11,cursor:"pointer",flexShrink:0}}>
                 {isOpen?"▲":"editar"}
               </button>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
-              <Inp label="Valor Aplicado" type="number" value={inv.aplicado||""} onChange={v=>upd(inv.id,"aplicado",v)} placeholder="0,00"/>
-              <Inp label="Valor Atual" type="number" value={inv.atual||""} onChange={v=>upd(inv.id,"atual",v)} placeholder="0,00"/>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8,marginTop:8}}>
+              <Inp label="Saldo em 01 do mês" type="number" value={inv.atual||""} onChange={v=>upd(inv.id,"atual",v)} placeholder="0,00"/>
+              <Inp label="Aportes no mês" type="number" value={inv.aporte||""} onChange={v=>upd(inv.id,"aporte",v)} placeholder="0,00"/>
+              <Inp label="Resgates no mês" type="number" value={inv.resgate||""} onChange={v=>upd(inv.id,"resgate",v)} placeholder="0,00"/>
             </div>
-            {inv.aplicado>0&&(
-              <div style={{marginTop:8,padding:"7px 10px",borderRadius:8,background:inv.atual>=inv.aplicado?"rgba(74,222,128,.07)":"rgba(239,68,68,.07)",display:"flex",justifyContent:"space-between"}}>
-                <span style={{fontSize:12,color:"#555"}}>Rendimento</span>
-                <span className="mono" style={{fontSize:13,fontWeight:600,color:inv.atual>=inv.aplicado?"#4ade80":"#f87171"}}>{fmtBRL(rendInv)} ({(rendInv/inv.aplicado*100).toFixed(1)}%)</span>
-              </div>
-            )}
             {isOpen&&(
               <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
                 <Inp label="Nome do ativo" value={inv.produto||""} onChange={v=>upd(inv.id,"produto",v)} placeholder="Ex: Tesouro Selic 2029"/>
                 <Sel label="Tipo" value={inv.tipo} onChange={v=>upd(inv.id,"tipo",v)} options={TIPOS_INVEST}/>
-                <button onClick={()=>remove(inv.id)} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:8,padding:"6px",color:"#f87171",fontSize:12,cursor:"pointer"}}>
+                <button onClick={()=>remove(inv.id)} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:8,padding:"6px",color:"#dc2626",fontSize:12,cursor:"pointer"}}>
                   Remover ativo
                 </button>
               </div>
@@ -1553,58 +1585,59 @@ function InvestView({month,setMonth,mesKey}) {
         );
       })}
       {!month.investimentos.length&&(
-        <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Nenhum ativo cadastrado ainda</div>
+        <div style={{textAlign:"center",padding:"20px 0",color:"#94a3b8",fontSize:12}}>Nenhum ativo cadastrado ainda</div>
       )}
 
       {importMsg&&(
-        <div style={{padding:"8px 12px",borderRadius:10,background:importMsg.ok?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",fontSize:12,color:importMsg.ok?"#4ade80":"#f87171",border:`1px solid ${importMsg.ok?"rgba(74,222,128,.2)":"rgba(239,68,68,.2)"}`}}>
+        <div style={{padding:"8px 12px",borderRadius:10,background:importMsg.ok?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",fontSize:12,color:importMsg.ok?"#15803d":"#dc2626",border:`1px solid ${importMsg.ok?"rgba(74,222,128,.2)":"rgba(239,68,68,.2)"}`}}>
           {importMsg.txt}
         </div>
       )}
 
       {showImport&&(
-        <Card style={{borderColor:"rgba(255,255,255,.1)"}}>
-          <div style={{fontSize:12,color:"#888",fontWeight:600,marginBottom:8}}>Importar carteira via JSON</div>
-          <div style={{fontSize:11,color:"#555",marginBottom:8,lineHeight:1.6}}>
-            Cole um array de ativos: {`[{"produto":"...","tipo":"Renda Fixa","aplicado":0,"atual":0}, ...]`}. Isso substitui a carteira deste mês.
+        <Card style={{borderColor:"rgba(15,23,42,.1)"}}>
+          <div style={{fontSize:12,color:"#64748b",fontWeight:600,marginBottom:8}}>Importar carteira via JSON</div>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:8,lineHeight:1.6}}>
+            Cole a fotografia da carteira: {`[{"produto":"...","tipo":"Renda Fixa","atual":0}, ...]`}. Aportes e resgates são registrados separadamente.
           </div>
           <textarea value={importJson} onChange={e=>setImportJson(e.target.value)}
-            placeholder='[{"produto":"CDB PICPAY","tipo":"Renda Fixa","aplicado":6010.09,"atual":6055.77}]'
-            style={{width:"100%",minHeight:100,background:"rgba(0,0,0,.4)",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,padding:10,color:"#f0f0f5",fontSize:10,outline:"none",resize:"vertical",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5}}/>
+            placeholder='[{"produto":"CDB PICPAY","tipo":"Renda Fixa","atual":6055.77}]'
+            style={{width:"100%",minHeight:100,background:"#f8fafc",border:"1px solid rgba(15,23,42,.1)",borderRadius:10,padding:10,color:"#172033",fontSize:10,outline:"none",resize:"vertical",fontFamily:"'IBM Plex Mono',monospace",lineHeight:1.5}}/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
-            <button onClick={()=>{setShowImport(false);setImportJson("");}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"#555",fontSize:13,cursor:"pointer"}}>Cancelar</button>
-            <button onClick={doImportInvest} style={{padding:"10px",borderRadius:10,border:"none",background:"#555",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Importar</button>
+            <button onClick={()=>{setShowImport(false);setImportJson("");}} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(15,23,42,.08)",background:"transparent",color:"#64748b",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+            <button onClick={doImportInvest} style={{padding:"10px",borderRadius:10,border:"none",background:"#64748b",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Importar</button>
           </div>
         </Card>
       )}
 
       {showAdd?(
         <Card style={{borderColor:"rgba(167,139,250,.2)"}}>
-          <div style={{fontSize:12,color:"#a78bfa",fontWeight:600,marginBottom:10}}>+ Novo ativo</div>
+          <div style={{fontSize:12,color:"#6d28d9",fontWeight:600,marginBottom:10}}>+ Novo ativo</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <Inp label="Nome do ativo" value={nova.produto} onChange={v=>setNova({...nova,produto:v})} placeholder="Ex: Tesouro Selic 2029"/>
             <Sel label="Tipo" value={nova.tipo} onChange={v=>setNova({...nova,tipo:v})} options={TIPOS_INVEST}/>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              <Inp label="Valor Aplicado" type="number" value={nova.aplicado} onChange={v=>setNova({...nova,aplicado:v})} placeholder="0,00"/>
-              <Inp label="Valor Atual" type="number" value={nova.atual} onChange={v=>setNova({...nova,atual:v})} placeholder="0,00"/>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8}}>
+              <Inp label="Saldo em 01 do mês" type="number" value={nova.atual} onChange={v=>setNova({...nova,atual:v})} placeholder="0,00"/>
+              <Inp label="Aportes no mês" type="number" value={nova.aporte} onChange={v=>setNova({...nova,aporte:v})} placeholder="0,00"/>
+              <Inp label="Resgates no mês" type="number" value={nova.resgate} onChange={v=>setNova({...nova,resgate:v})} placeholder="0,00"/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
-              <Btn outline color="#555" onClick={()=>setShowAdd(false)}>Cancelar</Btn>
-              <Btn color="#a78bfa" onClick={addInv}>Adicionar</Btn>
+              <Btn outline color="#64748b" onClick={()=>setShowAdd(false)}>Cancelar</Btn>
+              <Btn color="#6d28d9" onClick={addInv}>Adicionar</Btn>
             </div>
           </div>
         </Card>
       ):(
         <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>setShowAdd(true)} style={{flex:1,padding:"12px",borderRadius:12,border:"1px dashed rgba(167,139,250,.3)",background:"transparent",color:"#a78bfa",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+          <button onClick={()=>setShowAdd(true)} style={{flex:1,padding:"12px",borderRadius:12,border:"1px dashed rgba(167,139,250,.3)",background:"transparent",color:"#6d28d9",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
             + Adicionar ativo
           </button>
-          <button onClick={()=>setShowImport(true)} style={{padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"#888",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+          <button onClick={()=>setShowImport(true)} style={{padding:"12px 16px",borderRadius:12,border:"1px solid rgba(15,23,42,.1)",background:"transparent",color:"#64748b",fontSize:13,fontWeight:600,cursor:"pointer"}}>
             📋 JSON
           </button>
         </div>
       )}
-      <div style={{fontSize:10,color:"#2a2a35",textAlign:"center"}}>Os ativos passam automaticamente pro mês seguinte com os mesmos valores — só atualize o que mudou</div>
+      <div style={{fontSize:10,color:"#94a3b8",textAlign:"center"}}>A fotografia é o saldo no primeiro dia do mês. Ela não conta como despesa; somente aportes reduzem o saldo livre.</div>
     </div>
   );
 }
@@ -1618,18 +1651,18 @@ function AnáliseView({month, mesKey, setMonth}) {
   const [catAnual, setCatAnual] = useState(null);
 
   const CORES_CAT = {
-    "Mercado":"#4ade80","Comer fora":"#f97316","Delivery":"#fb923c",
-    "Carro":"#94a3b8","Uber":"#64748b","Farmácia":"#f87171",
-    "Empresa":"#818cf8","Casa":"#a78bfa","Apps":"#22d3ee",
-    "Lazer":"#fbbf24","Compras":"#e879f9","Pet":"#86efac",
+    "Mercado":"#15803d","Comer fora":"#c2410c","Delivery":"#fb923c",
+    "Carro":"#94a3b8","Uber":"#64748b","Farmácia":"#dc2626",
+    "Empresa":"#4f46e5","Casa":"#6d28d9","Apps":"#0e7490",
+    "Lazer":"#b45309","Compras":"#e879f9","Pet":"#86efac",
     "Família/Presentes":"#f9a8d4","Impostos":"#6b7280",
-    "Educação":"#34d399","Viagem":"#38bdf8","Outro":"#475569","Saúde":"#4ade80",
+    "Educação":"#34d399","Viagem":"#38bdf8","Outro":"#475569","Saúde":"#15803d",
   };
 
   const TAGS = [
-    {id:"indispensavel", label:"✓ Indispensável", color:"#4ade80", bg:"rgba(74,222,128,.12)"},
-    {id:"evitavel",      label:"✗ Evitável",      color:"#f87171", bg:"rgba(239,68,68,.12)"},
-    {id:"indefinido",    label:"? Indefinido",    color:"#fbbf24", bg:"rgba(251,191,36,.12)"},
+    {id:"indispensavel", label:"✓ Indispensável", color:"#15803d", bg:"rgba(74,222,128,.12)"},
+    {id:"evitavel",      label:"✗ Evitável",      color:"#dc2626", bg:"rgba(239,68,68,.12)"},
+    {id:"indefinido",    label:"? Indefinido",    color:"#b45309", bg:"rgba(251,191,36,.12)"},
   ];
 
   useEffect(()=>{
@@ -1722,12 +1755,12 @@ function AnáliseView({month, mesKey, setMonth}) {
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
 
       {/* Toggle Mês / Anual */}
-      <div style={{display:"flex",gap:4,background:"rgba(255,255,255,.04)",borderRadius:12,padding:4}}>
+      <div style={{display:"flex",gap:4,background:"rgba(15,23,42,.04)",borderRadius:12,padding:4}}>
         {[["mes","📅 Mês"],["anual","📊 Anual"]].map(([v,l])=>(
           <button key={v} onClick={()=>setVisao(v)} style={{
             flex:1,padding:"8px",borderRadius:9,border:"none",
             background:visao===v?"rgba(124,106,247,.3)":"transparent",
-            color:visao===v?"#a89cf7":"#444",fontSize:13,fontWeight:600,cursor:"pointer"
+            color:visao===v?"#5b58d6":"#7c8799",fontSize:13,fontWeight:600,cursor:"pointer"
           }}>{l}</button>
         ))}
       </div>
@@ -1735,23 +1768,23 @@ function AnáliseView({month, mesKey, setMonth}) {
       {visao==="mes"&&<>
         {/* Balanço */}
         <Card style={{padding:"12px"}}>
-          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>
             Balanço — {mesLabelAtual}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
-            {[["Receita",recT,"#4ade80"],["Despesas",totalDesp,"#f87171"],["Saldo",saldo,saldo>=0?"#4ade80":"#f87171"]].map(([l,v,cor])=>(
-              <div key={l} style={{textAlign:"center",background:"rgba(255,255,255,.03)",borderRadius:10,padding:"8px 4px"}}>
-                <div style={{fontSize:9,color:"#444",textTransform:"uppercase",letterSpacing:.6}}>{l}</div>
+            {[["Receita",recT,"#15803d"],["Despesas",totalDesp,"#dc2626"],["Saldo",saldo,saldo>=0?"#15803d":"#dc2626"]].map(([l,v,cor])=>(
+              <div key={l} style={{textAlign:"center",background:"rgba(15,23,42,.03)",borderRadius:10,padding:"8px 4px"}}>
+                <div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase",letterSpacing:.6}}>{l}</div>
                 <div className="mono" style={{fontSize:13,fontWeight:600,color:cor,marginTop:3}}>{fmtBRL(v)}</div>
               </div>
             ))}
           </div>
           {recT>0&&(
             <>
-              <div style={{height:5,borderRadius:3,background:"rgba(255,255,255,.06)",overflow:"hidden"}}>
-                <div style={{height:"100%",width:`${Math.min(totalDesp/recT*100,100)}%`,background:saldo>=0?"#f97316":"#f87171",borderRadius:3}}/>
+              <div style={{height:5,borderRadius:3,background:"rgba(15,23,42,.06)",overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${Math.min(totalDesp/recT*100,100)}%`,background:saldo>=0?"#c2410c":"#dc2626",borderRadius:3}}/>
               </div>
-              <div style={{fontSize:10,color:"#444",marginTop:4,textAlign:"right"}}>
+              <div style={{fontSize:10,color:"#7c8799",marginTop:4,textAlign:"right"}}>
                 {(totalDesp/recT*100).toFixed(0)}% da receita comprometida
               </div>
             </>
@@ -1761,22 +1794,22 @@ function AnáliseView({month, mesKey, setMonth}) {
         {/* Economia potencial */}
         {(evitavel>0||semTag>0)&&(
           <Card style={{borderColor:"rgba(251,191,36,.2)"}}>
-            <div style={{fontSize:10,color:"#fbbf24",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>
+            <div style={{fontSize:10,color:"#b45309",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>
               💡 Análise de gastos
             </div>
             {evitavel>0&&(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <span style={{fontSize:12,color:"#888"}}>Gastos evitáveis</span>
-                <span className="mono" style={{fontSize:14,color:"#f87171",fontWeight:700}}>{fmtBRL(evitavel)}</span>
+                <span style={{fontSize:12,color:"#64748b"}}>Gastos evitáveis</span>
+                <span className="mono" style={{fontSize:14,color:"#dc2626",fontWeight:700}}>{fmtBRL(evitavel)}</span>
               </div>
             )}
             {semTag>0&&(
-              <div style={{fontSize:11,color:"#555"}}>
+              <div style={{fontSize:11,color:"#64748b"}}>
                 {semTag} lançamento(s) ainda sem classificação — toque numa categoria abaixo para classificar
               </div>
             )}
             {evitavel>0&&recT>0&&(
-              <div style={{marginTop:6,padding:"6px 10px",background:"rgba(74,222,128,.06)",borderRadius:8,fontSize:11,color:"#4ade80"}}>
+              <div style={{marginTop:6,padding:"6px 10px",background:"rgba(74,222,128,.06)",borderRadius:8,fontSize:11,color:"#15803d"}}>
                 Sem os gastos evitáveis, seu saldo seria {fmtBRL(saldo+evitavel)}
               </div>
             )}
@@ -1786,13 +1819,13 @@ function AnáliseView({month, mesKey, setMonth}) {
         {/* Categorias */}
         {sortedAtual.length>0&&(
           <Card>
-            <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
+            <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
               Gastos por categoria — {mesLabelAtual}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               {sortedAtual.map(([cat,val])=>{
                 const pct = grandTotal>0?(val/grandTotal*100):0;
-                const cor = CORES_CAT[cat]||"#7c6af7";
+                const cor = CORES_CAT[cat]||"#5b58d6";
                 const isSelected = catSel===cat;
                 return (
                   <div key={cat} onClick={()=>setCatSel(isSelected?null:cat)}
@@ -1803,14 +1836,14 @@ function AnáliseView({month, mesKey, setMonth}) {
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
                       <div style={{display:"flex",alignItems:"center",gap:7}}>
                         <div style={{width:9,height:9,borderRadius:3,background:cor,flexShrink:0}}/>
-                        <span style={{fontSize:12,color:isSelected?cor:"#ccc",fontWeight:isSelected?600:400}}>{cat}</span>
+                        <span style={{fontSize:12,color:isSelected?cor:"#334155",fontWeight:isSelected?600:400}}>{cat}</span>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{fontSize:10,color:"#444"}}>{pct.toFixed(1)}%</span>
+                        <span style={{fontSize:10,color:"#7c8799"}}>{pct.toFixed(1)}%</span>
                         <span className="mono" style={{fontSize:12,color:cor,fontWeight:600,minWidth:72,textAlign:"right"}}>{fmtBRL(val)}</span>
                       </div>
                     </div>
-                    <div style={{height:5,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden"}}>
+                    <div style={{height:5,background:"rgba(15,23,42,.05)",borderRadius:3,overflow:"hidden"}}>
                       <div style={{height:"100%",width:`${pct}%`,background:cor,borderRadius:3,transition:"width .5s"}}/>
                     </div>
                   </div>
@@ -1822,12 +1855,12 @@ function AnáliseView({month, mesKey, setMonth}) {
 
         {/* Lista de lançamentos da categoria selecionada */}
         {catSel&&lancCatSel.length>0&&(
-          <Card style={{borderColor:`${CORES_CAT[catSel]||"#7c6af7"}33`}}>
+          <Card style={{borderColor:`${CORES_CAT[catSel]||"#5b58d6"}33`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div style={{fontSize:11,color:CORES_CAT[catSel]||"#7c6af7",fontWeight:600,textTransform:"uppercase",letterSpacing:.6}}>
+              <div style={{fontSize:11,color:CORES_CAT[catSel]||"#5b58d6",fontWeight:600,textTransform:"uppercase",letterSpacing:.6}}>
                 {catSel}
               </div>
-              <span className="mono" style={{fontSize:12,color:CORES_CAT[catSel]||"#7c6af7",fontWeight:700}}>
+              <span className="mono" style={{fontSize:12,color:CORES_CAT[catSel]||"#5b58d6",fontWeight:700}}>
                 {fmtBRL(lancCatSel.reduce((s,t)=>s+Number(t.valor||0),0))}
               </span>
             </div>
@@ -1835,22 +1868,22 @@ function AnáliseView({month, mesKey, setMonth}) {
               {lancCatSel.map((t,i)=>{
                 const tagAtual = TAGS.find(tg=>tg.id===t.tag);
                 return (
-                  <div key={t.id||i} style={{padding:"8px 10px",background:"rgba(255,255,255,.03)",borderRadius:10,
-                    borderLeft:`3px solid ${tagAtual?.color||"rgba(255,255,255,.1)"}`}}>
+                  <div key={t.id||i} style={{padding:"8px 10px",background:"rgba(15,23,42,.03)",borderRadius:10,
+                    borderLeft:`3px solid ${tagAtual?.color||"rgba(15,23,42,.1)"}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:12,color:"#f0f0f5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
-                        <div style={{fontSize:10,color:"#444",marginTop:2}}>{t.data}{t.parcela?` · ${t.parcela}`:""}</div>
+                        <div style={{fontSize:12,color:"#172033",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
+                        <div style={{fontSize:10,color:"#7c8799",marginTop:2}}>{t.data}{t.parcela?` · ${t.parcela}`:""}</div>
                       </div>
-                      <span className="mono" style={{fontSize:13,color:"#f87171",fontWeight:600,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
+                      <span className="mono" style={{fontSize:13,color:"#dc2626",fontWeight:600,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
                     </div>
                     {/* Tags */}
                     <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                       {TAGS.map(tg=>(
                         <button key={tg.id} onClick={e=>{e.stopPropagation();setTag(t.id, t.tag===tg.id?null:tg.id);}}
-                          style={{padding:"3px 8px",borderRadius:8,border:`1px solid ${t.tag===tg.id?tg.color:"rgba(255,255,255,.08)"}`,
+                          style={{padding:"3px 8px",borderRadius:8,border:`1px solid ${t.tag===tg.id?tg.color:"rgba(15,23,42,.08)"}`,
                             background:t.tag===tg.id?tg.bg:"transparent",
-                            color:t.tag===tg.id?tg.color:"#444",fontSize:10,fontWeight:600,cursor:"pointer"}}>
+                            color:t.tag===tg.id?tg.color:"#7c8799",fontSize:10,fontWeight:600,cursor:"pointer"}}>
                           {tg.label}
                         </button>
                       ))}
@@ -1865,23 +1898,23 @@ function AnáliseView({month, mesKey, setMonth}) {
         {/* Top gastos */}
         {todosAtual.length>0&&(
           <Card>
-            <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>
+            <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>
               Maiores gastos — {mesLabelAtual}
             </div>
             {[...todosAtual].sort((a,b)=>Number(b.valor||0)-Number(a.valor||0)).slice(0,8).map((t,i)=>{
               const tagAtual = TAGS.find(tg=>tg.id===t.tag);
               return (
                 <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                  padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,.04)"}}>
+                  padding:"7px 0",borderBottom:"1px solid rgba(15,23,42,.04)"}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,color:"#f0f0f5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
+                    <div style={{fontSize:12,color:"#172033",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
-                      <div style={{width:6,height:6,borderRadius:2,background:CORES_CAT[t.cat]||"#555",flexShrink:0}}/>
-                      <span style={{fontSize:10,color:"#444"}}>{t.cat}</span>
+                      <div style={{width:6,height:6,borderRadius:2,background:CORES_CAT[t.cat]||"#64748b",flexShrink:0}}/>
+                      <span style={{fontSize:10,color:"#7c8799"}}>{t.cat}</span>
                       {tagAtual&&<span style={{fontSize:9,color:tagAtual.color,background:tagAtual.bg,padding:"1px 5px",borderRadius:4}}>{tagAtual.label}</span>}
                     </div>
                   </div>
-                  <span className="mono" style={{fontSize:13,color:"#f87171",fontWeight:500,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
+                  <span className="mono" style={{fontSize:13,color:"#dc2626",fontWeight:500,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
                 </div>
               );
             })}
@@ -1892,11 +1925,11 @@ function AnáliseView({month, mesKey, setMonth}) {
       {visao==="anual"&&<>
         {/* Receita vs Despesa */}
         <Card>
-          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:14}}>
             Receita vs Despesa — 12 meses
           </div>
           {loadingHistory?(
-            <div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Carregando…</div>
+            <div style={{textAlign:"center",padding:"20px 0",color:"#94a3b8",fontSize:12}}>Carregando…</div>
           ):(
             <>
               <div style={{display:"flex",alignItems:"flex-end",gap:4,height:120}}>
@@ -1906,19 +1939,19 @@ function AnáliseView({month, mesKey, setMonth}) {
                   return (
                     <div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
                       <div style={{width:"100%",display:"flex",gap:1,alignItems:"flex-end",height:100}}>
-                        <div style={{flex:1,background:"#4ade8088",borderRadius:"3px 3px 0 0",height:`${rec/maxBar*100}%`,minHeight:rec>0?2:0}}/>
-                        <div style={{flex:1,background:"#f8717188",borderRadius:"3px 3px 0 0",height:`${desp/maxBar*100}%`,minHeight:desp>0?2:0}}/>
+                        <div style={{flex:1,background:"#15803d88",borderRadius:"3px 3px 0 0",height:`${rec/maxBar*100}%`,minHeight:rec>0?2:0}}/>
+                        <div style={{flex:1,background:"#dc262688",borderRadius:"3px 3px 0 0",height:`${desp/maxBar*100}%`,minHeight:desp>0?2:0}}/>
                       </div>
-                      <span style={{fontSize:8,color:isCur?"#f0f0f5":"#444",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
+                      <span style={{fontSize:8,color:isCur?"#172033":"#7c8799",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
                     </div>
                   );
                 })}
               </div>
               <div style={{display:"flex",gap:12,marginTop:8,justifyContent:"center"}}>
-                {[["#4ade80","Receita"],["#f87171","Despesa"]].map(([cor,l])=>(
+                {[["#15803d","Receita"],["#dc2626","Despesa"]].map(([cor,l])=>(
                   <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
                     <div style={{width:8,height:8,borderRadius:2,background:cor}}/>
-                    <span style={{fontSize:10,color:"#555"}}>{l}</span>
+                    <span style={{fontSize:10,color:"#64748b"}}>{l}</span>
                   </div>
                 ))}
               </div>
@@ -1928,7 +1961,7 @@ function AnáliseView({month, mesKey, setMonth}) {
 
         {/* Saldo mensal */}
         <Card>
-          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
             Saldo mensal
           </div>
           {mesesOrdenados.map((k,i)=>{
@@ -1937,15 +1970,15 @@ function AnáliseView({month, mesKey, setMonth}) {
             return (
               <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
                 padding:"6px 10px",borderRadius:8,marginBottom:4,
-                background:isCur?"rgba(255,255,255,.05)":"transparent",
-                border:isCur?"1px solid rgba(255,255,255,.08)":"1px solid transparent"}}>
-                <span style={{fontSize:12,color:isCur?"#f0f0f5":"#666",fontWeight:isCur?600:400}}>{mesesLabel2[i]}</span>
+                background:isCur?"rgba(15,23,42,.05)":"transparent",
+                border:isCur?"1px solid rgba(15,23,42,.08)":"1px solid transparent"}}>
+                <span style={{fontSize:12,color:isCur?"#172033":"#64748b",fontWeight:isCur?600:400}}>{mesesLabel2[i]}</span>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  <span className="mono" style={{fontSize:10,color:"#555"}}>{fmtBRL(receitasMeses[i])}</span>
-                  <span style={{fontSize:10,color:"#333"}}>–</span>
-                  <span className="mono" style={{fontSize:10,color:"#555"}}>{fmtBRL(despesasMeses[i])}</span>
-                  <span style={{fontSize:10,color:"#333"}}>=</span>
-                  <span className="mono" style={{fontSize:12,color:saldoM>=0?"#4ade80":"#f87171",fontWeight:600}}>{fmtBRL(saldoM)}</span>
+                  <span className="mono" style={{fontSize:10,color:"#64748b"}}>{fmtBRL(receitasMeses[i])}</span>
+                  <span style={{fontSize:10,color:"#94a3b8"}}>–</span>
+                  <span className="mono" style={{fontSize:10,color:"#64748b"}}>{fmtBRL(despesasMeses[i])}</span>
+                  <span style={{fontSize:10,color:"#94a3b8"}}>=</span>
+                  <span className="mono" style={{fontSize:12,color:saldoM>=0?"#15803d":"#dc2626",fontWeight:600}}>{fmtBRL(saldoM)}</span>
                 </div>
               </div>
             );
@@ -1955,12 +1988,12 @@ function AnáliseView({month, mesKey, setMonth}) {
         {/* Categoria por mês */}
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>
+            <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8}}>
               Categoria por mês
             </div>
             <select value={catAnual||""} onChange={e=>setCatAnual(e.target.value||null)}
-              style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",borderRadius:8,
-                padding:"5px 10px",color:"#a89cf7",fontSize:11,fontWeight:600,outline:"none",cursor:"pointer"}}>
+              style={{background:"rgba(15,23,42,.07)",border:"1px solid rgba(15,23,42,.12)",borderRadius:8,
+                padding:"5px 10px",color:"#5b58d6",fontSize:11,fontWeight:600,outline:"none",cursor:"pointer"}}>
               <option value="">Selecionar</option>
               {Array.from(todasCatsAnual).sort().map(c=><option key={c} value={c}>{c}</option>)}
             </select>
@@ -1971,7 +2004,7 @@ function AnáliseView({month, mesKey, setMonth}) {
                 {mesesOrdenados.map((k,i)=>{
                   const val=catDados[i];
                   const isCur=k===mesKey;
-                  const cor=CORES_CAT[catAnual]||"#7c6af7";
+                  const cor=CORES_CAT[catAnual]||"#5b58d6";
                   return (
                     <div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
                       {val>0&&<span className="mono" style={{fontSize:7,color:cor}}>{val>=1000?`${(val/1000).toFixed(1)}k`:val.toFixed(0)}</span>}
@@ -1979,25 +2012,25 @@ function AnáliseView({month, mesKey, setMonth}) {
                         <div style={{width:"100%",background:isCur?cor:`${cor}66`,borderRadius:"3px 3px 0 0",
                           height:`${val/maxCat*100}%`,minHeight:val>0?2:0}}/>
                       </div>
-                      <span style={{fontSize:8,color:isCur?"#f0f0f5":"#444",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
+                      <span style={{fontSize:8,color:isCur?"#172033":"#7c8799",fontWeight:isCur?700:400}}>{mesesLabel2[i]}</span>
                     </div>
                   );
                 })}
               </div>
-              <div style={{marginTop:10,padding:"8px 10px",background:"rgba(255,255,255,.03)",borderRadius:8,display:"flex",justifyContent:"space-between"}}>
-                <span style={{fontSize:11,color:"#555"}}>{catAnual} — média</span>
-                <span className="mono" style={{fontSize:12,color:CORES_CAT[catAnual]||"#7c6af7",fontWeight:600}}>
+              <div style={{marginTop:10,padding:"8px 10px",background:"rgba(15,23,42,.03)",borderRadius:8,display:"flex",justifyContent:"space-between"}}>
+                <span style={{fontSize:11,color:"#64748b"}}>{catAnual} — média</span>
+                <span className="mono" style={{fontSize:12,color:CORES_CAT[catAnual]||"#5b58d6",fontWeight:600}}>
                   {fmtBRL(catDados.filter(v=>v>0).reduce((s,v,_,a)=>s+v/a.length,0))}
                 </span>
               </div>
             </>
           )}
-          {!catAnual&&<div style={{textAlign:"center",padding:"20px 0",color:"#333",fontSize:12}}>Selecione uma categoria</div>}
+          {!catAnual&&<div style={{textAlign:"center",padding:"20px 0",color:"#94a3b8",fontSize:12}}>Selecione uma categoria</div>}
         </Card>
 
         {/* Ranking */}
         <Card>
-          <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
             Total por categoria — período
           </div>
           {Array.from(todasCatsAnual).sort().map(cat=>{
@@ -2005,7 +2038,7 @@ function AnáliseView({month, mesKey, setMonth}) {
               const md=allMonths[k]; if(!md) return s;
               return s+[...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===cat).reduce((ss,t)=>ss+Number(t.valor||0),0);
             },0);
-            const cor=CORES_CAT[cat]||"#7c6af7";
+            const cor=CORES_CAT[cat]||"#5b58d6";
             const maxTotal=Math.max(...Array.from(todasCatsAnual).map(c=>mesesOrdenados.reduce((s,k)=>{
               const md=allMonths[k]; if(!md) return s;
               return s+[...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===c).reduce((ss,t)=>ss+Number(t.valor||0),0);
@@ -2015,11 +2048,11 @@ function AnáliseView({month, mesKey, setMonth}) {
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
                     <div style={{width:8,height:8,borderRadius:2,background:cor,flexShrink:0}}/>
-                    <span style={{fontSize:12,color:catAnual===cat?cor:"#ccc",fontWeight:catAnual===cat?600:400}}>{cat}</span>
+                    <span style={{fontSize:12,color:catAnual===cat?cor:"#334155",fontWeight:catAnual===cat?600:400}}>{cat}</span>
                   </div>
                   <span className="mono" style={{fontSize:11,color:cor}}>{fmtBRL(total)}</span>
                 </div>
-                <div style={{height:3,background:"rgba(255,255,255,.05)",borderRadius:2}}>
+                <div style={{height:3,background:"rgba(15,23,42,.05)",borderRadius:2}}>
                   <div style={{height:"100%",width:`${total/maxTotal*100}%`,background:cor,borderRadius:2}}/>
                 </div>
               </div>
@@ -2068,7 +2101,7 @@ function ConfigView({cats,setCats,locaisConfig,setLocaisConfig}) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <Card>
-        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
+        <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
           Categorias de gastos
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -2077,15 +2110,15 @@ function ConfigView({cats,setCats,locaisConfig,setLocaisConfig}) {
               {editIdx===i?(
                 <>
                   <input value={editVal} onChange={e=>setEditVal(e.target.value)}
-                    style={{flex:1,background:"rgba(255,255,255,.06)",border:"1px solid rgba(124,106,247,.3)",borderRadius:8,padding:"6px 10px",color:"#f0f0f5",fontSize:13,outline:"none"}}/>
-                  <button onClick={()=>saveEdit(i)} style={{background:"rgba(124,106,247,.2)",border:"1px solid rgba(124,106,247,.3)",borderRadius:7,padding:"5px 10px",color:"#a89cf7",fontSize:11,cursor:"pointer"}}>✓</button>
-                  <button onClick={()=>setEditIdx(null)} style={{background:"transparent",border:"1px solid rgba(255,255,255,.08)",borderRadius:7,padding:"5px 10px",color:"#555",fontSize:11,cursor:"pointer"}}>✕</button>
+                    style={{flex:1,background:"rgba(15,23,42,.06)",border:"1px solid rgba(124,106,247,.3)",borderRadius:8,padding:"6px 10px",color:"#172033",fontSize:13,outline:"none"}}/>
+                  <button onClick={()=>saveEdit(i)} style={{background:"rgba(124,106,247,.2)",border:"1px solid rgba(124,106,247,.3)",borderRadius:7,padding:"5px 10px",color:"#5b58d6",fontSize:11,cursor:"pointer"}}>✓</button>
+                  <button onClick={()=>setEditIdx(null)} style={{background:"transparent",border:"1px solid rgba(15,23,42,.08)",borderRadius:7,padding:"5px 10px",color:"#64748b",fontSize:11,cursor:"pointer"}}>✕</button>
                 </>
               ):(
                 <>
-                  <span style={{flex:1,fontSize:13,color:"#f0f0f5"}}>{cat}</span>
-                  <button onClick={()=>{setEditIdx(i);setEditVal(cat);}} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.08)",borderRadius:7,padding:"4px 9px",color:"#666",fontSize:11,cursor:"pointer"}}>✏</button>
-                  <button onClick={()=>removeCat(cat)} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:7,padding:"4px 9px",color:"#f87171",fontSize:11,cursor:"pointer"}}>✕</button>
+                  <span style={{flex:1,fontSize:13,color:"#172033"}}>{cat}</span>
+                  <button onClick={()=>{setEditIdx(i);setEditVal(cat);}} style={{background:"rgba(15,23,42,.06)",border:"1px solid rgba(15,23,42,.08)",borderRadius:7,padding:"4px 9px",color:"#64748b",fontSize:11,cursor:"pointer"}}>✏</button>
+                  <button onClick={()=>removeCat(cat)} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:7,padding:"4px 9px",color:"#dc2626",fontSize:11,cursor:"pointer"}}>✕</button>
                 </>
               )}
             </div>
@@ -2095,30 +2128,30 @@ function ConfigView({cats,setCats,locaisConfig,setLocaisConfig}) {
           <input value={nova} onChange={e=>setNova(e.target.value)}
             onKeyDown={e=>e.key==="Enter"&&addCat()}
             placeholder="Nova categoria..."
-            style={{flex:1,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.08)",borderRadius:10,padding:"9px 12px",color:"#f0f0f5",fontSize:13,outline:"none"}}/>
-          <button onClick={addCat} style={{background:"#7c6af7",border:"none",borderRadius:10,padding:"9px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>+</button>
+            style={{flex:1,background:"rgba(15,23,42,.06)",border:"1px solid rgba(15,23,42,.08)",borderRadius:10,padding:"9px 12px",color:"#172033",fontSize:13,outline:"none"}}/>
+          <button onClick={addCat} style={{background:"#5b58d6",border:"none",borderRadius:10,padding:"9px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>+</button>
         </div>
-        <button onClick={()=>{setCats([...CATS_DEFAULT]);save("config:cats",[...CATS_DEFAULT]);}} style={{marginTop:8,background:"transparent",border:"1px solid rgba(255,255,255,.06)",borderRadius:8,padding:"6px",color:"#333",fontSize:11,cursor:"pointer",width:"100%"}}>
+        <button onClick={()=>{setCats([...CATS_DEFAULT]);save("config:cats",[...CATS_DEFAULT]);}} style={{marginTop:8,background:"transparent",border:"1px solid rgba(15,23,42,.06)",borderRadius:8,padding:"6px",color:"#94a3b8",fontSize:11,cursor:"pointer",width:"100%"}}>
           Restaurar categorias padrão
         </button>
       </Card>
       <Card>
-        <div style={{fontSize:10,color:"#555",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>Google Agenda · locais de plantão</div>
-        <div style={{fontSize:11,color:"#444",lineHeight:1.6,marginBottom:12}}>Defina o texto procurado no título do evento e o período que compõe o recebimento do mês selecionado. Mês 0 é o próprio mês; −1 é o anterior.</div>
+        <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>Google Agenda · locais de plantão</div>
+        <div style={{fontSize:11,color:"#7c8799",lineHeight:1.6,marginBottom:12}}>Defina o texto procurado no título do evento e o período que compõe o recebimento do mês selecionado. Mês 0 é o próprio mês; −1 é o anterior.</div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           {locaisConfig.map(l=>(
-            <div key={l.id} style={{padding:12,borderRadius:12,background:"rgba(255,255,255,.025)",border:"1px solid rgba(255,255,255,.07)",opacity:l.ativo===false?.55:1}}>
+            <div key={l.id} style={{padding:12,borderRadius:12,background:"rgba(15,23,42,.025)",border:"1px solid rgba(15,23,42,.07)",opacity:l.ativo===false?.55:1}}>
               <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:9}}>
-                <span style={{flex:1,color:"#a89cf7",fontSize:14,fontWeight:600}}>{l.nome}</span>
-                <button onClick={()=>updateLocal(l.id,"ativo",l.ativo===false)} style={{background:"transparent",border:"1px solid rgba(255,255,255,.08)",borderRadius:7,padding:"4px 8px",color:l.ativo===false?"#4ade80":"#666",fontSize:10,cursor:"pointer"}}>{l.ativo===false?"Ativar":"Pausar"}</button>
-                <button onClick={()=>removeAgendaLocal(l.id)} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:7,padding:"4px 8px",color:"#f87171",fontSize:10,cursor:"pointer"}}>✕</button>
+                <span style={{flex:1,color:"#5b58d6",fontSize:14,fontWeight:600}}>{l.nome}</span>
+                <button onClick={()=>updateLocal(l.id,"ativo",l.ativo===false)} style={{background:"transparent",border:"1px solid rgba(15,23,42,.08)",borderRadius:7,padding:"4px 8px",color:l.ativo===false?"#15803d":"#64748b",fontSize:10,cursor:"pointer"}}>{l.ativo===false?"Ativar":"Pausar"}</button>
+                <button onClick={()=>removeAgendaLocal(l.id)} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:7,padding:"4px 8px",color:"#dc2626",fontSize:10,cursor:"pointer"}}>✕</button>
               </div>
               <Inp label="Texto buscado no evento" value={l.busca} onChange={v=>updateLocal(l.id,"busca",v)} placeholder="Ex: Leonor"/>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
                 <Inp label="Valor/h (R$)" type="number" value={l.valorH||""} onChange={v=>updateLocal(l.id,"valorH",v)} placeholder="0"/>
                 <Inp label="Dia receb." type="number" value={l.diaReceb||""} onChange={v=>updateLocal(l.id,"diaReceb",v)} placeholder="0"/>
               </div>
-              <div style={{fontSize:10,color:"#555",margin:"10px 0 6px"}}>Competência do recebimento</div>
+              <div style={{fontSize:10,color:"#64748b",margin:"10px 0 6px"}}>Competência do recebimento</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}><Inp label="Início · dia" type="number" value={l.inicioDia} onChange={v=>updateLocal(l.id,"inicioDia",v)}/><Inp label="Mês" type="number" value={l.inicioMes} onChange={v=>updateLocal(l.id,"inicioMes",v)}/></div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}><Inp label="Fim · dia" type="number" value={l.fimDia} onChange={v=>updateLocal(l.id,"fimDia",v)}/><Inp label="Mês" type="number" value={l.fimMes} onChange={v=>updateLocal(l.id,"fimMes",v)}/></div>
@@ -2130,9 +2163,9 @@ function ConfigView({cats,setCats,locaisConfig,setLocaisConfig}) {
           <div style={{marginTop:10,padding:12,border:"1px solid rgba(124,106,247,.25)",borderRadius:12}}>
             <Inp label="Nome do local" value={novoLocal.nome||""} onChange={v=>setNovoLocal({...novoLocal,nome:v,busca:novoLocal.busca||v})}/>
             <div style={{marginTop:8}}><Inp label="Texto buscado no evento" value={novoLocal.busca||""} onChange={v=>setNovoLocal({...novoLocal,busca:v})}/></div>
-            <div style={{display:"flex",gap:8,marginTop:10}}><Btn outline color="#555" onClick={()=>setNovoLocal(null)}>Cancelar</Btn><Btn color="#7c6af7" onClick={addAgendaLocal}>Adicionar</Btn></div>
+            <div style={{display:"flex",gap:8,marginTop:10}}><Btn outline color="#64748b" onClick={()=>setNovoLocal(null)}>Cancelar</Btn><Btn color="#5b58d6" onClick={addAgendaLocal}>Adicionar</Btn></div>
           </div>
-        ):<button onClick={()=>setNovoLocal({nome:"",busca:"",inicioDia:1,inicioMes:0,fimDia:31,fimMes:0})} style={{marginTop:12,width:"100%",padding:10,borderRadius:10,border:"1px dashed rgba(124,106,247,.3)",background:"transparent",color:"#a89cf7",cursor:"pointer"}}>+ Adicionar local</button>}
+        ):<button onClick={()=>setNovoLocal({nome:"",busca:"",inicioDia:1,inicioMes:0,fimDia:31,fimMes:0})} style={{marginTop:12,width:"100%",padding:10,borderRadius:10,border:"1px dashed rgba(124,106,247,.3)",background:"transparent",color:"#5b58d6",cursor:"pointer"}}>+ Adicionar local</button>}
       </Card>
     </div>
   );
@@ -2200,11 +2233,11 @@ export default function App() {
     load(storageKey).then(async d=>{
       if(!d){
         const seed=seedMonth(mesKey);
-        // Continuidade: herda a carteira de investimentos do mês anterior (se existir),
-        // pra não precisar recadastrar os ativos toda vez que o mês vira
+        // Continuidade: herda os nomes dos ativos, mas a fotografia do novo mês
+        // precisa ser confirmada para não inventar rendimento.
         try{
           const prev=await load(`month:${prevMesKey(mesKey)}`);
-          if(prev?.investimentos?.length) seed.investimentos=prev.investimentos.map(i=>({...i}));
+          if(prev?.investimentos?.length) seed.investimentos=normalizeInvestimentos(prev.investimentos).map(i=>({...i,aporte:0,resgate:0}));
         }catch{}
         setMonthRaw(seed);
         return;
@@ -2222,7 +2255,8 @@ export default function App() {
         auxilioDia: d.auxilioDia||5,
         auxilioStatus: d.auxilioStatus||"aguardando",
         fixas: d.fixas||seed.fixas,
-        investimentos: d.investimentos||seed.investimentos,
+        investimentos: normalizeInvestimentos(d.investimentos||seed.investimentos),
+        investimentosFotoConfirmada: hasFotoInvestimentos(d),
         bolsa: d.bolsa||0,
         auxilio: d.auxilio||0,
         receitasExtra: d.receitasExtra||[],
@@ -2270,7 +2304,8 @@ useEffect(()=>{
       plantoes:mergePlantoesConfig(d.plantoes||seed.plantoes),
       bolsaDia:d.bolsaDia||5, bolsaStatus:d.bolsaStatus||"aguardando",
       auxilioDia:d.auxilioDia||5, auxilioStatus:d.auxilioStatus||"aguardando",
-      fixas:d.fixas||seed.fixas, investimentos:d.investimentos||seed.investimentos,
+      fixas:d.fixas||seed.fixas, investimentos:normalizeInvestimentos(d.investimentos||seed.investimentos),
+      investimentosFotoConfirmada:hasFotoInvestimentos(d),
       bolsa:d.bolsa||0, auxilio:d.auxilio||0, receitasExtra:d.receitasExtra||[],
     };
   };
@@ -2282,7 +2317,7 @@ useEffect(()=>{
       + (d.receitasExtra||[]).length
       + (d.plantoes||[]).filter(p=>p.n>0||p.horas>0).length
       + (d.fixas||[]).filter(f=>f.valor>0).length
-      + (d.investimentos||[]).filter(i=>Number(i.aplicado)>0||Number(i.atual)>0).length;
+      + (d.investimentos||[]).filter(i=>Number(i.atual)>0||Number(i.aporte)>0||Number(i.resgate)>0).length;
   };
 
   // Salva dados locais no Supabase
@@ -2344,10 +2379,10 @@ useEffect(()=>{
   if(!autenticado) return (
     <>
       <style>{G}</style>
-      <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0a0a0f",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px"}}>
+      <div style={{maxWidth:440,margin:"0 auto",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px"}}>
         <div style={{fontSize:48,marginBottom:16}}>🦁</div>
         <div style={{fontSize:22,fontWeight:700,letterSpacing:-.5,marginBottom:4}}>Finanças Pessoais</div>
-        <div style={{fontSize:12,color:"#333",marginBottom:40}}>Acesso restrito</div>
+        <div style={{fontSize:12,color:"#94a3b8",marginBottom:40}}>Acesso restrito</div>
         <div style={{width:"100%",display:"flex",flexDirection:"column",gap:12}}>
           <input
             type="password"
@@ -2357,16 +2392,16 @@ useEffect(()=>{
             placeholder="Senha"
             autoFocus
             style={{
-              background:"rgba(255,255,255,.06)",
-              border:`1px solid ${erroSenha?"rgba(239,68,68,.5)":"rgba(255,255,255,.1)"}`,
-              borderRadius:12,padding:"14px 16px",color:"#f0f0f5",
+              background:"#fff",
+              border:`1px solid ${erroSenha?"rgba(220,38,38,.5)":"#dfe6ef"}`,
+              borderRadius:12,padding:"14px 16px",color:"#172033",
               fontSize:16,outline:"none",width:"100%",textAlign:"center",
               letterSpacing:4,transition:"border .2s"
             }}
           />
-          {erroSenha&&<div style={{textAlign:"center",fontSize:12,color:"#f87171"}}>Senha incorreta</div>}
+          {erroSenha&&<div style={{textAlign:"center",fontSize:12,color:"#dc2626"}}>Senha incorreta</div>}
           <button onClick={tentarLogin} style={{
-            background:"#7c6af7",border:"none",borderRadius:12,
+            background:"#5b58d6",border:"none",borderRadius:12,
             padding:"14px",color:"#fff",fontSize:14,fontWeight:600,cursor:"pointer"
           }}>Entrar</button>
         </div>
@@ -2377,40 +2412,40 @@ useEffect(()=>{
   return (
     <>
       <style>{G}</style>
-      <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0a0a0f",display:"flex",flexDirection:"column"}}>
-        <div style={{position:"sticky",top:0,zIndex:20,background:"linear-gradient(#0a0a0f 80%,transparent)",padding:"14px 16px 0"}}>
+      <div className="app-shell">
+        <div style={{position:"sticky",top:0,zIndex:20,background:"rgba(238,243,248,.94)",backdropFilter:"blur(18px)",padding:"16px 24px 0"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div>
-              <div style={{fontSize:9,color:"#2a2a35",textTransform:"uppercase",letterSpacing:2}}>Finanças Pessoais</div>
+              <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:2}}>Finanças Pessoais</div>
               <div style={{fontSize:18,fontWeight:700,letterSpacing:-.5}}>{NAV.find(n=>n.id===view)?.label}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{display:"flex",gap:4,alignItems:"center"}}>
-              {gdriveStatus==="connecting"&&<span style={{fontSize:10,color:"#555"}}>⏳</span>}
-              {gdriveStatus==="synced"&&<span style={{fontSize:10,color:"#4ade80"}}>✓ Sync</span>}
-              {gdriveStatus==="error"&&<span style={{fontSize:10,color:"#f87171",cursor:"pointer"}} onClick={backupToDrive}>↻ Retry</span>}
+              {gdriveStatus==="connecting"&&<span style={{fontSize:10,color:"#64748b"}}>⏳</span>}
+              {gdriveStatus==="synced"&&<span style={{fontSize:10,color:"#15803d"}}>✓ Sync</span>}
+              {gdriveStatus==="error"&&<span style={{fontSize:10,color:"#dc2626",cursor:"pointer"}} onClick={backupToDrive}>↻ Retry</span>}
               <button onClick={restoreFromDrive} title="Carregar dados de outro dispositivo" style={{
-                background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",
-                borderRadius:8,padding:"3px 8px",color:"#333",
+                background:"rgba(15,23,42,.04)",border:"1px solid rgba(15,23,42,.08)",
+                borderRadius:8,padding:"3px 8px",color:"#94a3b8",
                 fontSize:10,cursor:"pointer",
               }}>⬇</button>
             </div>
-            <div style={{width:6,height:6,borderRadius:"50%",background:saving?"#fbbf24":"#4ade80",transition:"background .3s"}}/>
+            <div style={{width:6,height:6,borderRadius:"50%",background:saving?"#b45309":"#15803d",transition:"background .3s"}}/>
           </div>
           </div>
           <MonthNav mesKey={mesKey} setMesKey={setMesKeyRaw}/>
-          <div style={{display:"flex",gap:4,overflowX:"auto",padding:"8px 0 2px",scrollbarWidth:"none"}}>
+          <div className="desktop-tabs" style={{display:"flex",gap:6,overflowX:"auto",padding:"10px 0 4px",scrollbarWidth:"none"}}>
             {NAV.map(n=>(
-              <button key={n.id} onClick={()=>setView(n.id)} style={{padding:"6px 14px",borderRadius:20,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:view===n.id?"rgba(124,106,247,.25)":"rgba(255,255,255,.05)",color:view===n.id?"#a89cf7":"#555",flexShrink:0,transition:"all .2s"}}>
+              <button key={n.id} onClick={()=>setView(n.id)} style={{padding:"6px 14px",borderRadius:20,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:view===n.id?"rgba(124,106,247,.25)":"rgba(15,23,42,.05)",color:view===n.id?"#5b58d6":"#64748b",flexShrink:0,transition:"all .2s"}}>
                 {n.label}
               </button>
             ))}
           </div>
-          <div style={{height:1,background:"rgba(255,255,255,.04)",marginTop:6}}/>
+          <div style={{height:1,background:"rgba(15,23,42,.04)",marginTop:6}}/>
         </div>
 
-        <div style={{flex:1,padding:"10px 16px 90px"}}>
-          {!month?<div style={{textAlign:"center",padding:"60px 0",color:"#222"}}>Carregando…</div>
+        <div className="app-main">
+          {!month?<div style={{textAlign:"center",padding:"60px 0",color:"#cbd5e1"}}>Carregando…</div>
             :view==="dashboard"?<Dashboard month={month} setView={setView}/>
             :view==="plantoes"?<PlantoesView month={month} setMonth={setMonthRaw} mesKey={mesKey} locaisConfig={locaisConfig} setLocaisConfig={setLocaisConfig}/>
             :view==="fixas"?<FixasView month={month} setMonth={setMonthRaw}/>
@@ -2422,10 +2457,10 @@ useEffect(()=>{
             :null}
         </div>
 
-        <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:"rgba(10,10,15,.92)",backdropFilter:"blur(20px)",borderTop:"1px solid rgba(255,255,255,.05)",display:"flex",padding:"8px 4px 18px"}}>
-          {NAV.map(n=>(
-            <button key={n.id} onClick={()=>setView(n.id)} style={{flex:1,padding:"6px 2px",border:"none",background:"transparent",cursor:"pointer",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,color:view===n.id?"#a89cf7":"#2a2a35",transition:"color .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-              <div style={{width:20,height:2,borderRadius:1,background:view===n.id?"#7c6af7":"transparent",transition:"all .2s"}}/>
+        <div className="mobile-nav" style={{position:"fixed",bottom:0,left:0,width:"100%",background:"rgba(255,255,255,.94)",backdropFilter:"blur(20px)",borderTop:"1px solid #dfe6ef",display:"flex",padding:"8px 4px 18px",boxShadow:"0 -8px 24px rgba(43,55,80,.08)"}}>
+          {NAV.filter(n=>["dashboard","plantoes","cartoes","variaveis","investimentos"].includes(n.id)).map(n=>(
+            <button key={n.id} onClick={()=>setView(n.id)} style={{flex:1,padding:"6px 2px",border:"none",background:"transparent",cursor:"pointer",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,color:view===n.id?"#5b58d6":"#94a3b8",transition:"color .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+              <div style={{width:20,height:2,borderRadius:1,background:view===n.id?"#5b58d6":"transparent",transition:"all .2s"}}/>
               {n.label}
             </button>
           ))}
