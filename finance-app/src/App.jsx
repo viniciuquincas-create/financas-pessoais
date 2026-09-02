@@ -89,6 +89,17 @@ const today  = () => new Date().toISOString().split("T")[0];
 const curMes = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 const mesLabel = k => { const[y,m]=k.split("-"); return `${MESES[+m-1].toUpperCase()} / ${y}`; };
 const prevMesKey = k => { const[y,m]=k.split("-").map(Number); const d=new Date(y,m-2,1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
+const addMonthsKey = (k,delta) => { const[y,m]=k.split("-").map(Number); const d=new Date(y,m-1+delta,1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
+const parseParcela = parcela => {
+  const m=String(parcela||"").trim().match(/^(\d+)\s*\/\s*(\d+)$/);
+  if(!m) return null;
+  const atual=Number(m[1]), total=Number(m[2]);
+  return atual>=1&&total>=atual?{atual,total}:null;
+};
+const descKey = desc => String(desc||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]/g,"");
+const sameCardEntry = (a,b) => descKey(a.desc)===descKey(b.desc)
+  && Math.abs(Number(a.valor||0)-Number(b.valor||0))<0.01
+  && String(a.parcela||"").replace(/\s/g,"")===String(b.parcela||"").replace(/\s/g,"");
 
 const load = async (key,fb=null) => { try{ const r=await window.storage.get(key); return r?JSON.parse(r.value):fb; }catch{ return fb; }};
 const save = async (key,val)     => { try{ await window.storage.set(key,JSON.stringify(val)); }catch{} };
@@ -824,7 +835,7 @@ function FixasView({month,setMonth}) {
   );
 }
 
-function CartoesView({month, setMonth, mesKey}) {
+function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthInstallments}) {
   const [activeCard,setActiveCard]=useState("inter");
   const [showForm,setShowForm]=useState(false);
   const [showImport,setShowImport]=useState(false);
@@ -843,6 +854,8 @@ function CartoesView({month, setMonth, mesKey}) {
   const card=CARDS.find(c=>c.id===activeCard);
   const items=month.cartoes[activeCard]||[];
   const total=items.reduce((s,t)=>s+Number(t.valor||0),0);
+  const previsto=items.filter(t=>t.projetado).reduce((s,t)=>s+Number(t.valor||0),0);
+  const confirmado=total-previsto;
   const totalAll=Object.values(month.cartoes).flat().reduce((s,t)=>s+Number(t.valor||0),0);
   const onPdfSelect=e=>{
     const f=e.target.files?.[0];
@@ -917,15 +930,14 @@ Retorne SOMENTE o array JSON.`;
 
   const confirmPdfImport=()=>{
     const cartaoAlvo=activeCard;
-    const novos=[...(month.cartoes[cartaoAlvo]||[]),...pdfPreview];
-    setMonth({...month,cartoes:{...month.cartoes,[cartaoAlvo]:novos}});
-    setImportMsg({ok:true,txt:`✓ ${pdfPreview.length} lançamentos importados para ${card.label} · ${fmtBRL(pdfPreview.reduce((s,t)=>s+t.valor,0))}`});
+    const resultado=importCardEntries(cartaoAlvo,pdfPreview);
+    setImportMsg({ok:true,txt:`✓ ${pdfPreview.length} lançamentos importados · ${resultado.conciliados} previsão(ões) conciliada(s) · ${resultado.projetados} parcela(s) futura(s) programada(s)`});
     setShowPdfUpload(false); setPdfFile(null); setPdfPreview([]);
   };
 
   const add=()=>{
     if(!form.desc||!form.valor) return;
-    setMonth({...month,cartoes:{...month.cartoes,[activeCard]:[...items,{...form,valor:Number(form.valor),id:Date.now()}]}});
+    importCardEntries(activeCard,[{...form,valor:Number(form.valor)}]);
     setForm({desc:"",cat:CATS[0],parcela:"",valor:""});
     setShowForm(false);
   };
@@ -935,10 +947,10 @@ Retorne SOMENTE o array JSON.`;
       const data=JSON.parse(importJson);
       if(!data.lancamentos) throw new Error("JSON inválido");
       const cartaoAlvo=data.cartao||activeCard;
-      const novos=data.lancamentos.map(l=>({...l,id:Date.now()+Math.random(),valor:Number(l.valor||0)}));
-      setMonth({...month,cartoes:{...month.cartoes,[cartaoAlvo]:[...(month.cartoes[cartaoAlvo]||[]),...novos]}});
+      const novos=data.lancamentos.map(l=>({...l,valor:Number(l.valor||0)}));
+      const resultado=importCardEntries(cartaoAlvo,novos);
       if(cartaoAlvo!==activeCard) setActiveCard(cartaoAlvo);
-      setImportMsg({ok:true,txt:`✓ ${novos.length} lançamentos importados para ${CARDS.find(c=>c.id===cartaoAlvo)?.label||cartaoAlvo} · R$ ${data.total?.toFixed(2)||""}`});
+      setImportMsg({ok:true,txt:`✓ ${novos.length} lançamentos importados · ${resultado.conciliados} previsão(ões) conciliada(s) · ${resultado.projetados} parcela(s) futura(s) programada(s)`});
       setImportJson(""); setShowImport(false);
     }catch(e){
       setImportMsg({ok:false,txt:"Erro: "+e.message});
@@ -965,6 +977,14 @@ Retorne SOMENTE o array JSON.`;
           <div style={{textAlign:"right"}}><div style={{fontSize:10,color:"#64748b"}}>Total cartões</div><div className="mono" style={{fontSize:16,color:"#dc2626"}}>{fmtBRL(totalAll)}</div></div>
         </div>
       </Card>
+      {previsto>0&&(
+        <Card style={{padding:"10px 14px",background:"rgba(91,88,214,.04)",borderColor:"rgba(91,88,214,.14)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:12}}>
+            <div><div style={{fontSize:10,color:"#64748b"}}>Fatura já lançada</div><div className="mono" style={{fontSize:14,color:"#334155",fontWeight:600}}>{fmtBRL(confirmado)}</div></div>
+            <div style={{textAlign:"right"}}><div style={{fontSize:10,color:"#64748b"}}>Parcelas previstas</div><div className="mono" style={{fontSize:14,color:"#5b58d6",fontWeight:600}}>{fmtBRL(previsto)}</div></div>
+          </div>
+        </Card>
+      )}
       {/* Import buttons */}
       <div style={{display:"flex",gap:8}}>
         <button onClick={()=>{setShowPdfUpload(!showPdfUpload);setShowImport(false);setImportMsg(null);setPdfFile(null);setPdfPreview([]);setPdfProcessing(false);}} style={{flex:1,padding:"9px",borderRadius:10,border:`1px solid ${card.color}44`,background:showPdfUpload?`${card.color}18`:"transparent",color:card.color,fontSize:12,fontWeight:600,cursor:"pointer"}}>
@@ -977,6 +997,12 @@ Retorne SOMENTE o array JSON.`;
           🗑
         </button>
       </div>
+      <button onClick={()=>{
+        const r=projectMonthInstallments();
+        setImportMsg({ok:true,txt:`✓ ${r.projetados} parcela(s) futura(s) programada(s) a partir dos lançamentos deste mês`});
+      }} style={{padding:"9px",borderRadius:10,border:"1px solid rgba(91,88,214,.18)",background:"rgba(91,88,214,.05)",color:"#5b58d6",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+        ↗ Projetar parcelamentos deste mês
+      </button>
 
       {importMsg&&(
         <div style={{padding:"8px 12px",borderRadius:10,background:importMsg.ok?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",fontSize:12,color:importMsg.ok?"#15803d":"#dc2626",border:`1px solid ${importMsg.ok?"rgba(74,222,128,.2)":"rgba(239,68,68,.2)"}`}}>
@@ -1074,6 +1100,7 @@ Retorne SOMENTE o array JSON.`;
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,color:"#172033",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
               <div style={{fontSize:10,color:"#64748b",marginTop:1}}>{t.data||""}{t.parcela?` · Parcela ${t.parcela}`:""}</div>
+              {t.projetado&&<div style={{display:"inline-flex",marginTop:4,padding:"2px 7px",borderRadius:999,background:"rgba(91,88,214,.08)",color:"#5b58d6",fontSize:9,fontWeight:700}}>PREVISTO · será conciliado ao importar a fatura</div>}
             </div>
             <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
               <span className="mono" style={{fontSize:14,color:card.color,fontWeight:600}}>{fmtBRL(t.valor)}</span>
@@ -2320,6 +2347,68 @@ useEffect(()=>{
       + (d.investimentos||[]).filter(i=>Number(i.atual)>0||Number(i.aporte)>0||Number(i.resgate)>0).length;
   };
 
+  const scheduleInstallments = (cardId, entries, sourceKey=mesKey) => {
+    let projetados=0;
+    for(const entry of entries) {
+      const p=parseParcela(entry.parcela);
+      if(!p||p.atual>=p.total) continue;
+      const parcelamentoId=entry.parcelamentoId||`${cardId}:${descKey(entry.desc)}:${Number(entry.valor||0).toFixed(2)}:${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      entry.parcelamentoId=parcelamentoId;
+      for(let n=p.atual+1;n<=p.total;n++) {
+        const targetKey=addMonthsKey(sourceKey,n-p.atual);
+        const storageTarget=`month:${targetKey}`;
+        let target;
+        try { target=JSON.parse(localStorage.getItem(storageTarget))||seedMonth(targetKey); }
+        catch { target=seedMonth(targetKey); }
+        target.cartoes=target.cartoes||{inter:[],itau:[],will:[],xp:[]};
+        const list=target.cartoes[cardId]||[];
+        const future={...entry,id:`${parcelamentoId}:${n}`,parcela:`${n}/${p.total}`,parcelamentoId,projetado:true,origemMes:sourceKey};
+        const idx=list.findIndex(x=>(x.parcelamentoId===parcelamentoId&&String(x.parcela)===future.parcela)||(x.projetado&&sameCardEntry(x,future)));
+        if(idx<0) { list.push(future); projetados++; }
+        else if(list[idx].projetado) list[idx]={...list[idx],...future,id:list[idx].id};
+        target.cartoes[cardId]=list;
+        localStorage.setItem(storageTarget,JSON.stringify(target));
+      }
+    }
+    return projetados;
+  };
+
+  const importCardEntries = (cardId, rawEntries) => {
+    const existing=[...(month?.cartoes?.[cardId]||[])];
+    const used=new Set();
+    let conciliados=0;
+    const normalized=rawEntries.map((raw,i)=>{
+      const incoming={...raw,valor:Number(raw.valor||0),id:raw.id||Date.now()+i+Math.random()};
+      const idx=existing.findIndex((x,j)=>!used.has(j)&&x.projetado&&sameCardEntry(x,incoming));
+      if(idx>=0) {
+        used.add(idx); conciliados++;
+        return {...existing[idx],...incoming,id:existing[idx].id,parcelamentoId:existing[idx].parcelamentoId,projetado:false,conciliado:true};
+      }
+      return incoming;
+    });
+    const updated=existing.map((x,i)=>{
+      if(!used.has(i)) return x;
+      const replacement=normalized.find(n=>n.id===x.id);
+      return replacement||x;
+    });
+    normalized.filter(n=>!existing.some(x=>x.id===n.id)).forEach(n=>updated.push(n));
+    const projetados=scheduleInstallments(cardId,normalized);
+    setMonthRaw({...month,cartoes:{...month.cartoes,[cardId]:updated}});
+    return {conciliados,projetados};
+  };
+
+  const projectMonthInstallments = () => {
+    const next={...month,cartoes:{...month.cartoes}};
+    let projetados=0;
+    for(const [cardId,list] of Object.entries(month.cartoes||{})) {
+      const copied=list.map(x=>({...x}));
+      projetados+=scheduleInstallments(cardId,copied);
+      next.cartoes[cardId]=copied;
+    }
+    setMonthRaw(next);
+    return {projetados};
+  };
+
   // Salva dados locais no Supabase
   const backupToDrive = async () => {
     setGdriveStatus("connecting");
@@ -2449,7 +2538,7 @@ useEffect(()=>{
             :view==="dashboard"?<Dashboard month={month} setView={setView}/>
             :view==="plantoes"?<PlantoesView month={month} setMonth={setMonthRaw} mesKey={mesKey} locaisConfig={locaisConfig} setLocaisConfig={setLocaisConfig}/>
             :view==="fixas"?<FixasView month={month} setMonth={setMonthRaw}/>
-            :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
+            :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw} mesKey={mesKey} importCardEntries={importCardEntries} projectMonthInstallments={projectMonthInstallments}/>
             :view==="variaveis"?<PixView month={month} setMonth={setMonthRaw}/>
             :view==="investimentos"?<InvestView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="analise"?<AnáliseView month={month} mesKey={mesKey} setMonth={setMonthRaw}/>
