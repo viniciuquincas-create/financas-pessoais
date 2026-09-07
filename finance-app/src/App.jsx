@@ -163,6 +163,32 @@ const mergePlantoesConfig = plantoes => {
   return [...base,...faltantes];
 };
 
+const agendaRequestConfig = locaisConfig => locaisConfig
+  .filter(l=>l.ativo!==false)
+  .map(({nome,busca,inicioDia,inicioMes,fimDia,fimMes})=>({nome,busca,inicioDia,inicioMes,fimDia,fimMes}));
+
+const syncAgendaMonth = async (monthData, monthKey, locaisConfig) => {
+  const config=agendaRequestConfig(locaisConfig);
+  if(!config.length) return {month:monthData,data:{plantoes:{},periodos:{}}};
+  const res=await fetch(`/api/agenda?mes=${monthKey}&config=${encodeURIComponent(JSON.stringify(config))}`);
+  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data=await res.json();
+  if(data.error) throw new Error(data.error);
+  const plantoesApi=data.plantoes||{};
+  if(!Object.keys(plantoesApi).length) throw new Error("Nenhum plantão encontrado");
+  const atuais=mergePlantoesConfig(monthData.plantoes||[]);
+  const updated=atuais.map(p=>{
+    const d=plantoesApi[p.local];
+    if(!d||p.bloqueadoSync) return p;
+    const cfg=locaisConfig.find(l=>l.nome===p.local);
+    return {...p,n:Number(d.n)||0,horas:Number(d.horas)||0,valorH:Number(p.valorH||cfg?.valorH)||0,diaReceb:Number(p.diaReceb||cfg?.diaReceb)||0,fromAgenda:true,editadoManualmente:false};
+  });
+  return {
+    data,
+    month:{...monthData,plantoes:updated,agendaSincronizacao:{em:new Date().toISOString(),config:JSON.stringify(config)}},
+  };
+};
+
 const G = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
@@ -365,6 +391,7 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
   const [agendaMsg,setAgendaMsg]=useState(null);
   const [showAddLocal,setShowAddLocal]=useState(false);
   const [novoLocal,setNovoLocal]=useState({nome:"",valorH:"",diaReceb:""});
+  const mesEncerrado=mesKey<curMes();
 
   const plantaoT=(month.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0);
   const receitasFixas=getReceitasFixas(month).filter(r=>r.ativo!==false);
@@ -387,38 +414,14 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
     setAgendaLoading(true);
     setAgendaMsg(null);
     try {
-      const config=locaisConfig.filter(l=>l.ativo!==false).map(({nome,busca,inicioDia,inicioMes,fimDia,fimMes})=>({nome,busca,inicioDia,inicioMes,fimDia,fimMes}));
-      const res = await fetch(`/api/agenda?mes=${mesKey}&config=${encodeURIComponent(JSON.stringify(config))}`);
-      if(!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      // data format: {"plantoes":{"Leonor":{"n":9,"horas":153},...}, "periodos":{...}}
+      if(mesEncerrado) throw new Error("Mês encerrado: o histórico não é mais sincronizado");
+      const {month:updatedMonth,data}=await syncAgendaMonth(month,mesKey,locaisConfig);
       const plantoesApi = data.plantoes || {};
       const locaisApi = Object.keys(plantoesApi);
-      if(!locaisApi.length) throw new Error("Nenhum plantão encontrado");
-      let updated = month.plantoes.map(p => {
-        const d = plantoesApi[p.local];
-        if(!d) return p;
-        // Se está fixado, nunca sobrescreve
-        if(p.bloqueadoSync || p.editadoManualmente) return p;
-        const cfg=locaisConfig.find(l=>l.nome===p.local);
-        return {...p,n:d.n||0,horas:d.horas||0,valorH:p.valorH||cfg?.valorH||0,diaReceb:p.diaReceb||cfg?.diaReceb||0,fromAgenda:true};
-      });
-      // Locais que vieram da agenda mas ainda não existem no app — adiciona automaticamente,
-      // sem precisar editar código. Valor/h fica 0 até o usuário preencher.
-      const jaExistem = new Set(updated.map(p=>p.local));
-      const locaisNovos = locaisApi.filter(l=>!jaExistem.has(l));
-      if(locaisNovos.length){
-        const novosPlantoes = locaisNovos.map(l=>({
-          local:l, n:plantoesApi[l].n||0, horas:plantoesApi[l].horas||0,
-          valorH:0, fromAgenda:true, ativo:true, diaReceb:0, statusReceb:"aguardando",
-        }));
-        updated = [...updated, ...novosPlantoes];
-        setLocaisConfig([...locaisConfig,...locaisNovos.map(nome=>makeLocalConfig(nome))]);
-      }
-      setMonth({...month, plantoes: updated});
+      setMonth(updatedMonth);
       setSyncPeriodos(data.periodos||null);
       const resumo = locaisApi.map(l=>`${l}: ${plantoesApi[l].n} plant. ${plantoesApi[l].horas}h`).join(" · ");
-      setAgendaMsg({ok:true, txt:`✓ Sincronizado — ${resumo}${locaisNovos.length?` · novo(s) local(is) adicionado(s): ${locaisNovos.join(", ")} (defina o valor/h)`:""}`});
+      setAgendaMsg({ok:true, txt:`✓ Sincronizado — ${resumo}`});
     } catch(e) {
       setAgendaMsg({ok:false, txt:"Erro: "+e.message});
     } finally {
@@ -516,8 +519,8 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 0"}}>
         <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Plantões</div>
         <div style={{display:"flex",gap:6}}>
-          <button onClick={syncAgenda} disabled={agendaLoading} style={{background:"rgba(74,222,128,.15)",border:"1px solid rgba(74,222,128,.25)",borderRadius:8,padding:"4px 10px",color:"#15803d",fontSize:10,fontWeight:600,cursor:agendaLoading?"not-allowed":"pointer"}}>
-            {agendaLoading?"⏳":"🗓"} {agendaLoading?"Sincronizando...":"Sincronizar"}
+          <button onClick={syncAgenda} disabled={agendaLoading||mesEncerrado} style={{background:"rgba(74,222,128,.15)",border:"1px solid rgba(74,222,128,.25)",borderRadius:8,padding:"4px 10px",color:mesEncerrado?"#94a3b8":"#15803d",fontSize:10,fontWeight:600,cursor:agendaLoading||mesEncerrado?"not-allowed":"pointer"}}>
+            {agendaLoading?"⏳":mesEncerrado?"🔒":"🗓"} {agendaLoading?"Sincronizando...":mesEncerrado?"Mês encerrado":"Sincronizar agora"}
           </button>
           <button onClick={()=>setShowPaste(!showPaste)} style={{background:"rgba(124,106,247,.15)",border:"1px solid rgba(124,106,247,.25)",borderRadius:8,padding:"4px 10px",color:"#5b58d6",fontSize:10,fontWeight:600,cursor:"pointer"}}>📋 JSON</button>
         </div>
@@ -2265,6 +2268,7 @@ export default function App() {
   const [receitasFixasConfig,setReceitasFixasConfigState]=useState(RECEITAS_FIXAS_DEFAULT_CONFIG);
   const [configReady,setConfigReady]=useState(false);
   const [configVersion,setConfigVersion]=useState(0);
+  const autoAgendaRunning=useRef(false);
   const storageKey=`month:${mesKey}`;
 
   const setCats=(newCats)=>{ CATS=newCats; setCatsState(newCats); save("config:cats",newCats); setConfigVersion(v=>v+1); };
@@ -2382,6 +2386,51 @@ export default function App() {
     });
     setView("dashboard");
   },[mesKey,configReady]);
+
+  // Atualiza automaticamente o mês atual e os próximos cinco meses para manter
+  // a previsão de receita viva. Meses encerrados nunca entram neste fluxo.
+  useEffect(()=>{
+    if(!configReady||!month||mesKey<curMes()||autoAgendaRunning.current) return;
+    let cancelled=false;
+    const run=async()=>{
+      autoAgendaRunning.current=true;
+      try{
+        const base=curMes();
+        const targets=mesKey===base
+          ?Array.from({length:6},(_,i)=>addMonthsKey(base,i))
+          :[mesKey];
+        const configFingerprint=JSON.stringify(agendaRequestConfig(locaisConfig));
+        let selectedUpdate=null;
+        for(const key of targets){
+          if(cancelled) break;
+          let source;
+          if(key===mesKey) source=month;
+          else {
+            try { source=JSON.parse(localStorage.getItem(`month:${key}`))||seedMonth(key); }
+            catch { source=seedMonth(key); }
+            source=migrateMonth(source,key);
+          }
+          const last=Date.parse(source?.agendaSincronizacao?.em||"");
+          const fresh=Number.isFinite(last)&&Date.now()-last<6*60*60*1000;
+          const sameConfig=source?.agendaSincronizacao?.config===configFingerprint;
+          if(fresh&&sameConfig) continue;
+          try{
+            const result=await syncAgendaMonth(source,key,locaisConfig);
+            localStorage.setItem(`month:${key}`,JSON.stringify(result.month));
+            if(key===mesKey) selectedUpdate=result.month;
+          }catch(e){
+            console.warn(`Agenda auto-sync ${key} failed:`,e);
+          }
+        }
+        if(!cancelled&&selectedUpdate) setMonthRaw(selectedUpdate);
+        else if(!cancelled&&targets.length>1) setMonthRaw(cur=>cur?{...cur}:cur);
+      }finally{
+        autoAgendaRunning.current=false;
+      }
+    };
+    run();
+    return()=>{cancelled=true;};
+  },[configReady,month?.key,mesKey,configVersion]);
 useEffect(()=>{
     if(!month) return;
     setSaving(true);
