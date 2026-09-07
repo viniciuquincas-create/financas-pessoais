@@ -66,6 +66,13 @@ const FIXAS_BASE = [
   { nome:"Consórcio",       venc:"Dia 05", cat:"Impostos",  duracao:"sempre" },
   { nome:"FIES",            venc:"Dia 10", cat:"Educação",  duracao:"sempre" },
 ];
+const FIXAS_DEFAULT_CONFIG = FIXAS_BASE.map((f,i)=>({...f,id:i+1,valor:0,ativo:true}));
+let FIXAS_CONFIG = FIXAS_DEFAULT_CONFIG.map(f=>({...f}));
+const RECEITAS_FIXAS_DEFAULT_CONFIG = [
+  {id:"bolsa",nome:"Bolsa residência",icone:"🎓",valor:3640,dia:5,ativo:true},
+  {id:"auxilio",nome:"Auxílio moradia",icone:"🏠",valor:410,dia:5,ativo:true},
+];
+let RECEITAS_FIXAS_CONFIG = RECEITAS_FIXAS_DEFAULT_CONFIG.map(r=>({...r}));
 const makeLocalConfig = (nome, extra={}) => ({
   id:extra.id||`${Date.now()}-${Math.random().toString(36).slice(2)}`,
   nome, busca:extra.busca||nome, valorH:Number(extra.valorH)||0,
@@ -118,12 +125,21 @@ const seedMonth = key => ({
   auxilioDia: 5,
   auxilioStatus: "aguardando",
   receitasExtra: [],
-  fixas: FIXAS_BASE.map((f,i)=>({...f,id:i+1,status:"pendente",forma:"",banco:"",dataPgto:"",valor:0,extra:false,duracao:f.duracao||"sempre",mesesRestantes:null})),
+  receitasFixas: RECEITAS_FIXAS_CONFIG.filter(r=>r.ativo!==false).map(r=>({...r,status:"aguardando",templateId:r.id})),
+  fixas: FIXAS_CONFIG.filter(f=>f.ativo!==false).map(f=>({...f,templateId:f.id,status:"pendente",forma:"",banco:"",dataPgto:"",valor:Number(f.valor)||0,extra:false,duracao:f.duracao||"sempre",mesesRestantes:null})),
   cartoes: {inter:[],itau:[],will:[],xp:[]},
   variaveis: [],
   investimentos: [],
   investimentosFotoConfirmada: false,
 });
+
+const getReceitasFixas = d => Array.isArray(d?.receitasFixas)
+  ? d.receitasFixas
+  : [
+      {id:"bolsa",templateId:"bolsa",nome:"Bolsa residência",icone:"🎓",valor:Number(d?.bolsa)||0,dia:Number(d?.bolsaDia)||5,status:d?.bolsaStatus||"aguardando",ativo:true},
+      {id:"auxilio",templateId:"auxilio",nome:"Auxílio moradia",icone:"🏠",valor:Number(d?.auxilio)||0,dia:Number(d?.auxilioDia)||5,status:d?.auxilioStatus||"aguardando",ativo:true},
+    ];
+const totalReceitasFixas = d => getReceitasFixas(d).filter(r=>r.ativo!==false).reduce((s,r)=>s+Number(r.valor||0),0);
 
 const normalizeInvestimentos = arr => (arr||[])
   .filter(i=>i&&i.produto)
@@ -215,7 +231,7 @@ function MonthNav({mesKey,setMesKey}) {
 
 function Dashboard({month,setView}) {
   const plantaoT=month.plantoes.filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0);
-  const recT=plantaoT+Number(month.bolsa||0)+Number(month.auxilio||0)+(month.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
+  const recT=plantaoT+totalReceitasFixas(month)+(month.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
   const fixT=month.fixas.reduce((s,f)=>s+Number(f.valor||0),0);
   const carT=Object.values(month.cartoes).flat().reduce((s,t)=>s+Number(t.valor||0),0);
   const pixT=(month.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
@@ -231,8 +247,7 @@ function Dashboard({month,setView}) {
   const agendaOk=(month.plantoes||[]).some(p=>p.fromAgenda&&p.ativo!==false);
   const recAtrasado=[
     ...(month.plantoes||[]).filter(p=>p.ativo!==false&&p.statusReceb==="atrasado"),
-    ...(month.bolsaStatus==="atrasado"?[{local:"Bolsa"}]:[]),
-    ...(month.auxilioStatus==="atrasado"?[{local:"Auxílio"}]:[]),
+    ...getReceitasFixas(month).filter(r=>r.status==="atrasado").map(r=>({local:r.nome})),
     ...((month.receitasExtra||[]).filter(r=>r.status==="atrasado")),
   ];
 
@@ -352,10 +367,10 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
   const [novoLocal,setNovoLocal]=useState({nome:"",valorH:"",diaReceb:""});
 
   const plantaoT=(month.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0);
-  const bolsaV=Number(month.bolsa||0);
-  const auxilioV=Number(month.auxilio||0);
+  const receitasFixas=getReceitasFixas(month).filter(r=>r.ativo!==false);
+  const receitasFixasT=receitasFixas.reduce((s,r)=>s+Number(r.valor||0),0);
   const extrasT=(month.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
-  const total=plantaoT+bolsaV+auxilioV+extrasT;
+  const total=plantaoT+receitasFixasT+extrasT;
 
   const updPlantao=(i,f,v)=>{
     const p=[...month.plantoes];
@@ -477,35 +492,24 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
         <div style={{height:1,background:"rgba(15,23,42,.05)",margin:"10px 0"}}/>
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
           {plantaoT>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#64748b"}}>Plantões</span><span className="mono" style={{fontSize:11,color:"#15803d"}}>{fmtBRL(plantaoT)}</span></div>}
-          {bolsaV>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#64748b"}}>Bolsa residência</span><span className="mono" style={{fontSize:11,color:"#15803d"}}>{fmtBRL(bolsaV)}</span></div>}
-          {auxilioV>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#64748b"}}>Auxílio moradia</span><span className="mono" style={{fontSize:11,color:"#15803d"}}>{fmtBRL(auxilioV)}</span></div>}
+          {receitasFixas.map(r=><div key={r.id} style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#64748b"}}>{r.nome}</span><span className="mono" style={{fontSize:11,color:"#15803d"}}>{fmtBRL(r.valor)}</span></div>)}
           {extrasT>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#64748b"}}>Receitas extras</span><span className="mono" style={{fontSize:11,color:"#15803d"}}>{fmtBRL(extrasT)}</span></div>}
         </div>
       </Card>
 
-      {/* ── BOLSA + AUXÍLIO ── */}
+      {/* ── RECEITAS FIXAS ── */}
       <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:1,padding:"2px 0"}}>Receitas fixas mensais</div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        <Card style={{padding:"12px"}}>
+        {receitasFixas.map(r=><Card key={r.id} style={{padding:"12px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div style={{fontSize:11,color:"#5b58d6",fontWeight:600}}>🎓 Bolsa residência</div>
-            <StatusBadge value={month.bolsaStatus||"aguardando"} onChange={v=>setMonth({...month,bolsaStatus:v})}/>
+            <div style={{fontSize:11,color:"#5b58d6",fontWeight:600}}>{r.icone||"💵"} {r.nome}</div>
+            <StatusBadge value={r.status||"aguardando"} onChange={v=>setMonth({...month,receitasFixas:receitasFixas.map(x=>x.id===r.id?{...x,status:v}:x)})}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8}}>
-            <Inp label="Valor (R$)" type="number" value={month.bolsa||""} onChange={v=>setMonth({...month,bolsa:Number(v)||0})} placeholder="0,00"/>
-            <Inp label="Dia receb." type="number" value={month.bolsaDia||""} onChange={v=>setMonth({...month,bolsaDia:Number(v)||0})} placeholder="5"/>
+            <Inp label="Valor deste mês (R$)" type="number" value={r.valor||""} onChange={v=>setMonth({...month,receitasFixas:receitasFixas.map(x=>x.id===r.id?{...x,valor:Number(v)||0}:x)})} placeholder="0,00"/>
+            <Inp label="Dia receb." type="number" value={r.dia||""} onChange={v=>setMonth({...month,receitasFixas:receitasFixas.map(x=>x.id===r.id?{...x,dia:Number(v)||0}:x)})} placeholder="5"/>
           </div>
-        </Card>
-        <Card style={{padding:"12px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div style={{fontSize:11,color:"#5b58d6",fontWeight:600}}>🏠 Auxílio moradia</div>
-            <StatusBadge value={month.auxilioStatus||"aguardando"} onChange={v=>setMonth({...month,auxilioStatus:v})}/>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8}}>
-            <Inp label="Valor (R$)" type="number" value={month.auxilio||""} onChange={v=>setMonth({...month,auxilio:Number(v)||0})} placeholder="0,00"/>
-            <Inp label="Dia receb." type="number" value={month.auxilioDia||""} onChange={v=>setMonth({...month,auxilioDia:Number(v)||0})} placeholder="5"/>
-          </div>
-        </Card>
+        </Card>)}
       </div>
 
       {/* ── PLANTÕES ── */}
@@ -682,7 +686,7 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
 }
 
 // FixaCard fora do FixasView para evitar recriação a cada render (causa do bug "edita todas")
-function FixaCard({f, editing, setEditing, onUpd, onRemove}) {
+function FixaCard({f, editing, setEditing, onUpd, onRemove, onRemovePermanent}) {
   const isOpen = editing === f.id;
   return (
     <Card style={{
@@ -717,6 +721,7 @@ function FixaCard({f, editing, setEditing, onUpd, onRemove}) {
       </button>
       {isOpen&&(
         <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+          <Inp label="Nome" value={f.nome||""} onChange={v=>onUpd(f.id,"nome",v)} placeholder="Nome da despesa"/>
           <Inp label="Valor (R$)" type="number" value={f.valor||""} onChange={v=>onUpd(f.id,"valor",v)} placeholder="0,00"/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             <Inp label="Vencimento" value={f.venc||""} onChange={v=>onUpd(f.id,"venc",v)} placeholder="Dia 10"/>
@@ -750,26 +755,31 @@ function FixaCard({f, editing, setEditing, onUpd, onRemove}) {
               </div>
             )}
           </div>
-          {f.extra&&(
+          <div style={{display:"grid",gridTemplateColumns:f.extra?"1fr":"1fr 1fr",gap:8}}>
             <button onClick={()=>onRemove(f.id)} style={{background:"rgba(239,68,68,.08)",
               border:"1px solid rgba(239,68,68,.15)",borderRadius:8,padding:"6px",
               color:"#dc2626",fontSize:12,cursor:"pointer"}}>
-              Remover esta despesa
+              Remover deste mês
             </button>
-          )}
+            {!f.extra&&<button onClick={()=>onRemovePermanent(f)} style={{background:"#dc2626",border:"1px solid #dc2626",borderRadius:8,padding:"6px",color:"#fff",fontSize:12,cursor:"pointer"}}>Excluir dos próximos meses</button>}
+          </div>
         </div>
       )}
     </Card>
   );
 }
 
-function FixasView({month,setMonth}) {
+function FixasView({month,setMonth,setFixasConfig}) {
   const [editing,setEditing]=useState(null);
   const [showAdd,setShowAdd]=useState(false);
   const [nova,setNova]=useState({nome:"",venc:"",cat:CATS[0],valor:"",forma:"",banco:"",dataPgto:""});
 
   const upd=(id,field,val)=>setMonth({...month,fixas:month.fixas.map(x=>x.id===id?{...x,[field]:field==="valor"?Number(val)||0:val}:x)});
   const remove=id=>setMonth({...month,fixas:month.fixas.filter(f=>f.id!==id)});
+  const removePermanent=f=>{
+    setFixasConfig(FIXAS_CONFIG.filter(t=>String(t.id)!==String(f.templateId??f.id)));
+    setEditing(null);
+  };
   const addFixa=()=>{
     if(!nova.nome) return;
     setMonth({...month,fixas:[...month.fixas,{...nova,valor:Number(nova.valor)||0,id:Date.now(),status:"pendente",extra:true}]});
@@ -803,7 +813,7 @@ function FixasView({month,setMonth}) {
               {label}
             </div>
             {items.map(f=>(
-              <FixaCard key={f.id} f={f} editing={editing} setEditing={setEditing} onUpd={upd} onRemove={remove}/>
+              <FixaCard key={f.id} f={f} editing={editing} setEditing={setEditing} onUpd={upd} onRemove={remove} onRemovePermanent={removePermanent}/>
             ))}
           </div>
         );
@@ -830,7 +840,7 @@ function FixasView({month,setMonth}) {
           + Adicionar despesa fixa (este mês)
         </button>
       )}
-      <div style={{fontSize:10,color:"#94a3b8",textAlign:"center"}}>Despesas "extra" são exclusivas deste mês e podem ser removidas</div>
+      <div style={{fontSize:10,color:"#94a3b8",textAlign:"center"}}>Em “editar”, você pode remover só deste mês ou excluir uma despesa recorrente dos próximos meses.</div>
     </div>
   );
 }
@@ -1731,7 +1741,7 @@ function AnáliseView({month, mesKey, setMonth}) {
   const carT  = Object.values(month.cartoes||{}).flat().reduce((s,t)=>s+Number(t.valor||0),0);
   const varT  = (month.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
   const recT  = (month.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0)
-              + Number(month.bolsa||0) + Number(month.auxilio||0)
+              + totalReceitasFixas(month)
               + (month.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
   const totalDesp = fixT+carT+varT;
   const saldo = recT - totalDesp;
@@ -1752,7 +1762,7 @@ function AnáliseView({month, mesKey, setMonth}) {
   const getRecT = md => {
     if(!md) return 0;
     return (md.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0)
-      + Number(md.bolsa||0) + Number(md.auxilio||0)
+      + totalReceitasFixas(md)
       + (md.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
   };
   const getDespT = md => {
@@ -2092,11 +2102,13 @@ function AnáliseView({month, mesKey, setMonth}) {
   );
 }
 
-function ConfigView({cats,setCats,locaisConfig,setLocaisConfig}) {
+function ConfigView({cats,setCats,locaisConfig,setLocaisConfig,fixasConfig,setFixasConfig,receitasFixasConfig,setReceitasFixasConfig}) {
   const [nova,setNova]=useState("");
   const [editIdx,setEditIdx]=useState(null);
   const [editVal,setEditVal]=useState("");
   const [novoLocal,setNovoLocal]=useState(null);
+  const [novaFixa,setNovaFixa]=useState(null);
+  const [novaReceita,setNovaReceita]=useState(null);
 
   const addCat=()=>{
     if(!nova.trim()||cats.includes(nova.trim())) return;
@@ -2124,9 +2136,49 @@ function ConfigView({cats,setCats,locaisConfig,setLocaisConfig}) {
     setNovoLocal(null);
   };
   const removeAgendaLocal=id=>setLocaisConfig(locaisConfig.filter(l=>l.id!==id));
+  const updateFixa=(id,campo,valor)=>setFixasConfig(fixasConfig.map(f=>f.id===id?{...f,[campo]:campo==="valor"?Number(valor)||0:valor}:f));
+  const addFixaConfig=()=>{
+    if(!novaFixa?.nome?.trim()) return;
+    setFixasConfig([...fixasConfig,{...novaFixa,id:`fixa-${Date.now()}`,nome:novaFixa.nome.trim(),valor:Number(novaFixa.valor)||0,ativo:true,duracao:"sempre"}]);
+    setNovaFixa(null);
+  };
+  const updateReceita=(id,campo,valor)=>setReceitasFixasConfig(receitasFixasConfig.map(r=>r.id===id?{...r,[campo]:["valor","dia"].includes(campo)?Number(valor)||0:valor}:r));
+  const addReceitaConfig=()=>{
+    if(!novaReceita?.nome?.trim()) return;
+    setReceitasFixasConfig([...receitasFixasConfig,{...novaReceita,id:`receita-${Date.now()}`,nome:novaReceita.nome.trim(),valor:Number(novaReceita.valor)||0,dia:Number(novaReceita.dia)||0,icone:"💵",ativo:true}]);
+    setNovaReceita(null);
+  };
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <Card>
+        <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>Receitas fixas mensais</div>
+        <div style={{fontSize:11,color:"#7c8799",lineHeight:1.6,marginBottom:12}}>Estes valores entram automaticamente em cada mês novo. Na aba Receita, você ainda pode ajustar somente o mês selecionado.</div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {receitasFixasConfig.map(r=><div key={r.id} style={{padding:12,borderRadius:12,background:"rgba(21,128,61,.035)",border:"1px solid rgba(21,128,61,.12)",opacity:r.ativo===false?.55:1}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <span style={{fontSize:18}}>{r.icone||"💵"}</span>
+              <input value={r.nome} onChange={e=>updateReceita(r.id,"nome",e.target.value)} aria-label="Nome da receita fixa" style={{flex:1,background:"transparent",border:"none",borderBottom:"1px solid rgba(15,23,42,.1)",padding:"5px 2px",color:"#172033",fontSize:13,fontWeight:600,outline:"none"}}/>
+              <button onClick={()=>updateReceita(r.id,"ativo",r.ativo===false)} style={{background:"transparent",border:"1px solid rgba(15,23,42,.08)",borderRadius:7,padding:"4px 8px",color:r.ativo===false?"#15803d":"#64748b",fontSize:10,cursor:"pointer"}}>{r.ativo===false?"Ativar":"Pausar"}</button>
+              <button onClick={()=>setReceitasFixasConfig(receitasFixasConfig.filter(x=>x.id!==r.id))} aria-label={`Excluir ${r.nome}`} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:7,padding:"4px 8px",color:"#dc2626",fontSize:10,cursor:"pointer"}}>✕</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8}}><Inp label="Valor padrão (R$)" type="number" value={r.valor||""} onChange={v=>updateReceita(r.id,"valor",v)}/><Inp label="Dia receb." type="number" value={r.dia||""} onChange={v=>updateReceita(r.id,"dia",v)}/></div>
+          </div>)}
+        </div>
+        {novaReceita?<div style={{marginTop:10,padding:12,border:"1px solid rgba(21,128,61,.2)",borderRadius:12}}><Inp label="Nome" value={novaReceita.nome||""} onChange={v=>setNovaReceita({...novaReceita,nome:v})}/><div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8,marginTop:8}}><Inp label="Valor padrão (R$)" type="number" value={novaReceita.valor||""} onChange={v=>setNovaReceita({...novaReceita,valor:v})}/><Inp label="Dia receb." type="number" value={novaReceita.dia||""} onChange={v=>setNovaReceita({...novaReceita,dia:v})}/></div><div style={{display:"flex",gap:8,marginTop:10}}><Btn outline color="#64748b" onClick={()=>setNovaReceita(null)}>Cancelar</Btn><Btn color="#15803d" onClick={addReceitaConfig}>Adicionar</Btn></div></div>:<button onClick={()=>setNovaReceita({nome:"",valor:"",dia:5})} style={{marginTop:12,width:"100%",padding:10,borderRadius:10,border:"1px dashed rgba(21,128,61,.3)",background:"transparent",color:"#15803d",cursor:"pointer"}}>+ Adicionar receita fixa</button>}
+      </Card>
+      <Card>
+        <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:4}}>Despesas fixas recorrentes</div>
+        <div style={{fontSize:11,color:"#7c8799",lineHeight:1.6,marginBottom:12}}>Edite a lista que aparecerá no mês atual e nos próximos. Os meses antigos permanecem como estavam.</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {fixasConfig.map(f=><div key={f.id} style={{padding:12,borderRadius:12,background:"rgba(180,83,9,.025)",border:"1px solid rgba(180,83,9,.1)",opacity:f.ativo===false?.55:1}}>
+            <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}><input value={f.nome} onChange={e=>updateFixa(f.id,"nome",e.target.value)} aria-label="Nome da despesa fixa" style={{flex:1,background:"transparent",border:"none",borderBottom:"1px solid rgba(15,23,42,.1)",padding:"5px 2px",color:"#172033",fontSize:13,fontWeight:600,outline:"none"}}/><button onClick={()=>updateFixa(f.id,"ativo",f.ativo===false)} style={{background:"transparent",border:"1px solid rgba(15,23,42,.08)",borderRadius:7,padding:"4px 8px",color:f.ativo===false?"#15803d":"#64748b",fontSize:10,cursor:"pointer"}}>{f.ativo===false?"Ativar":"Pausar"}</button><button onClick={()=>setFixasConfig(fixasConfig.filter(x=>x.id!==f.id))} aria-label={`Excluir ${f.nome}`} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:7,padding:"4px 8px",color:"#dc2626",fontSize:10,cursor:"pointer"}}>✕</button></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><Inp label="Vencimento" value={f.venc||""} onChange={v=>updateFixa(f.id,"venc",v)}/><Sel label="Categoria" value={f.cat||"Outro"} onChange={v=>updateFixa(f.id,"cat",v)} options={CATS}/></div>
+            <div style={{marginTop:8}}><Inp label="Valor padrão opcional (R$)" type="number" value={f.valor||""} onChange={v=>updateFixa(f.id,"valor",v)} placeholder="Pode variar mês a mês"/></div>
+          </div>)}
+        </div>
+        {novaFixa?<div style={{marginTop:10,padding:12,border:"1px solid rgba(180,83,9,.2)",borderRadius:12}}><Inp label="Nome" value={novaFixa.nome||""} onChange={v=>setNovaFixa({...novaFixa,nome:v})}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}><Inp label="Vencimento" value={novaFixa.venc||""} onChange={v=>setNovaFixa({...novaFixa,venc:v})}/><Sel label="Categoria" value={novaFixa.cat||CATS[0]} onChange={v=>setNovaFixa({...novaFixa,cat:v})} options={CATS}/></div><div style={{marginTop:8}}><Inp label="Valor padrão (R$)" type="number" value={novaFixa.valor||""} onChange={v=>setNovaFixa({...novaFixa,valor:v})}/></div><div style={{display:"flex",gap:8,marginTop:10}}><Btn outline color="#64748b" onClick={()=>setNovaFixa(null)}>Cancelar</Btn><Btn color="#b45309" onClick={addFixaConfig}>Adicionar</Btn></div></div>:<button onClick={()=>setNovaFixa({nome:"",venc:"Dia 10",cat:CATS[0],valor:""})} style={{marginTop:12,width:"100%",padding:10,borderRadius:10,border:"1px dashed rgba(180,83,9,.3)",background:"transparent",color:"#b45309",cursor:"pointer"}}>+ Adicionar despesa fixa recorrente</button>}
+      </Card>
       <Card>
         <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
           Categorias de gastos
@@ -2209,13 +2261,18 @@ export default function App() {
   const [gdriveStatus,setGdriveStatus]=useState("idle");
   const [cats,setCatsState]=useState(CATS_DEFAULT);
   const [locaisConfig,setLocaisConfigState]=useState(LOCAIS_DEFAULT_CONFIG);
+  const [fixasConfig,setFixasConfigState]=useState(FIXAS_DEFAULT_CONFIG);
+  const [receitasFixasConfig,setReceitasFixasConfigState]=useState(RECEITAS_FIXAS_DEFAULT_CONFIG);
+  const [configReady,setConfigReady]=useState(false);
+  const [configVersion,setConfigVersion]=useState(0);
   const storageKey=`month:${mesKey}`;
 
-  const setCats=(newCats)=>{ CATS=newCats; setCatsState(newCats); };
+  const setCats=(newCats)=>{ CATS=newCats; setCatsState(newCats); save("config:cats",newCats); setConfigVersion(v=>v+1); };
   const setLocaisConfig=(newConfig)=>{
     LOCAIS_CONFIG=newConfig;
     setLocaisConfigState(newConfig);
     save("config:agenda-locais",newConfig);
+    setConfigVersion(v=>v+1);
     setMonthRaw(cur=>{
       if(!cur) return cur;
       const existentes=new Set((cur.plantoes||[]).map(p=>p.local));
@@ -2223,39 +2280,71 @@ export default function App() {
       return faltantes.length?{...cur,plantoes:[...(cur.plantoes||[]),...faltantes]}:cur;
     });
   };
-
-  // Load cats from storage
-  useEffect(()=>{
-    load("config:cats").then(d=>{ if(d&&Array.isArray(d)){ CATS=d; setCatsState(d); } });
-  },[]);
-
-  // Load/migrate locais de plantão from storage
-  useEffect(()=>{
-    Promise.all([load("config:agenda-locais"),load("config:locais")]).then(([config,legado])=>{
-      let d=config;
-      if(!Array.isArray(d)||!d.length) d=Array.isArray(legado)&&legado.length?legado.map(nome=>makeLocalConfig(nome)):LOCAIS_DEFAULT_CONFIG;
-      d=d.map(l=>typeof l==="string"?makeLocalConfig(l):makeLocalConfig(l.nome,l));
-      setLocaisConfig(d);
+  const setFixasConfig=(newConfig)=>{
+    const previous=FIXAS_CONFIG;
+    FIXAS_CONFIG=newConfig;
+    setFixasConfigState(newConfig);
+    save("config:fixas",newConfig);
+    setConfigVersion(v=>v+1);
+    setMonthRaw(cur=>{
+      if(!cur||cur.key<curMes()) return cur;
+      const extras=(cur.fixas||[]).filter(f=>f.extra);
+      const recorrentes=newConfig.filter(f=>f.ativo!==false).map(t=>{
+        const old=(cur.fixas||[]).find(f=>String(f.templateId??f.id)===String(t.id));
+        const prev=previous.find(f=>String(f.id)===String(t.id));
+        const mudouValor=Number(prev?.valor||0)!==Number(t.valor||0);
+        return old?{...old,nome:t.nome,venc:t.venc,cat:t.cat,templateId:t.id,valor:old.status==="pago"&&Number(old.valor)>0?old.valor:mudouValor?Number(t.valor)||0:old.valor}:{...t,templateId:t.id,status:"pendente",forma:"",banco:"",dataPgto:"",valor:Number(t.valor)||0,extra:false,duracao:"sempre",mesesRestantes:null};
+      });
+      return {...cur,fixas:[...recorrentes,...extras]};
     });
-  },[]);
+  };
+  const setReceitasFixasConfig=(newConfig)=>{
+    const previous=RECEITAS_FIXAS_CONFIG;
+    RECEITAS_FIXAS_CONFIG=newConfig;
+    setReceitasFixasConfigState(newConfig);
+    save("config:receitas-fixas",newConfig);
+    setConfigVersion(v=>v+1);
+    setMonthRaw(cur=>{
+      if(!cur||cur.key<curMes()) return cur;
+      const current=getReceitasFixas(cur);
+      const receitasFixas=newConfig.filter(r=>r.ativo!==false).map(t=>{
+        const old=current.find(r=>String(r.templateId??r.id)===String(t.id));
+        const prev=previous.find(r=>String(r.id)===String(t.id));
+        return {...t,templateId:t.id,status:old?.status||"aguardando",valor:Number(prev?.valor||0)!==Number(t.valor||0)?Number(t.valor)||0:Number(old?.valor??t.valor)||0,dia:Number(prev?.dia||0)!==Number(t.dia||0)?Number(t.dia)||0:Number(old?.dia??t.dia)||0};
+      });
+      return {...cur,receitasFixas};
+    });
+  };
 
-  // Auto-load from Supabase on first open if localStorage is empty
+  // Carrega o backup antes dos cadastros para manter configurações iguais em todos os dispositivos.
   useEffect(()=>{
-    const hasLocal = Object.keys(localStorage).some(k=>k.startsWith("month:"));
-    if(!hasLocal) {
+    (async()=>{
+      const hasLocal=Object.keys(localStorage).some(k=>k.startsWith("month:"));
       setGdriveStatus("connecting");
-      supabaseLoad().then(remoteData=>{
+      try{
+        const remoteData=await supabaseLoad();
         if(remoteData) {
           for(const [key,val] of Object.entries(remoteData)) {
+            if(hasLocal&&!key.startsWith("config:")) continue;
             localStorage.setItem(key, typeof val==="string"?val:JSON.stringify(val));
           }
         }
-        setGdriveStatus("idle");
-      }).catch(()=>setGdriveStatus("idle"));
-    }
+      }catch{}
+      const [catsSaved,agendaSaved,locaisLegado,fixasSaved,receitasSaved]=await Promise.all([load("config:cats"),load("config:agenda-locais"),load("config:locais"),load("config:fixas"),load("config:receitas-fixas")]);
+      if(Array.isArray(catsSaved)&&catsSaved.length){CATS=catsSaved;setCatsState(catsSaved);}
+      let agenda=agendaSaved;
+      if(!Array.isArray(agenda)||!agenda.length) agenda=Array.isArray(locaisLegado)&&locaisLegado.length?locaisLegado.map(nome=>makeLocalConfig(nome)):LOCAIS_DEFAULT_CONFIG;
+      agenda=agenda.map(l=>typeof l==="string"?makeLocalConfig(l):makeLocalConfig(l.nome,l));
+      LOCAIS_CONFIG=agenda;setLocaisConfigState(agenda);
+      if(Array.isArray(fixasSaved)){FIXAS_CONFIG=fixasSaved;setFixasConfigState(fixasSaved);}
+      if(Array.isArray(receitasSaved)){RECEITAS_FIXAS_CONFIG=receitasSaved;setReceitasFixasConfigState(receitasSaved);}
+      setGdriveStatus("idle");
+      setConfigReady(true);
+    })();
   },[]);
 
   useEffect(()=>{
+    if(!configReady) return;
     setMonthRaw(null);
     load(storageKey).then(async d=>{
       if(!d){
@@ -2282,6 +2371,7 @@ export default function App() {
         auxilioDia: d.auxilioDia||5,
         auxilioStatus: d.auxilioStatus||"aguardando",
         fixas: d.fixas||seed.fixas,
+        receitasFixas:Array.isArray(d.receitasFixas)?d.receitasFixas:RECEITAS_FIXAS_CONFIG.filter(r=>r.ativo!==false).map(r=>({...r,templateId:r.id,status:r.id==="bolsa"?(d.bolsaStatus||"aguardando"):r.id==="auxilio"?(d.auxilioStatus||"aguardando"):"aguardando",valor:Number(r.id==="bolsa"&&d.bolsa||r.id==="auxilio"&&d.auxilio||r.valor)||0,dia:Number(r.id==="bolsa"&&d.bolsaDia||r.id==="auxilio"&&d.auxilioDia||r.dia)||0})),
         investimentos: normalizeInvestimentos(d.investimentos||seed.investimentos),
         investimentosFotoConfirmada: hasFotoInvestimentos(d),
         bolsa: d.bolsa||0,
@@ -2291,7 +2381,7 @@ export default function App() {
       setMonthRaw(migrated);
     });
     setView("dashboard");
-  },[mesKey]);
+  },[mesKey,configReady]);
 useEffect(()=>{
     if(!month) return;
     setSaving(true);
@@ -2299,7 +2389,7 @@ useEffect(()=>{
       await save(storageKey,month);
       // Auto-sync to Supabase (debounced 3s) — com merge seguro pra não sobrescrever dados melhores no servidor
       try {
-        const allKeys = Object.keys(localStorage).filter(k=>k.startsWith("month:"));
+        const allKeys = Object.keys(localStorage).filter(k=>k.startsWith("month:")||k.startsWith("config:"));
         const localData = {};
         for(const key of allKeys) {
           try { localData[key] = JSON.parse(localStorage.getItem(key)); } catch {}
@@ -2308,7 +2398,9 @@ useEffect(()=>{
         const merged = { ...(remoteData||{}) };
         for(const [key, localVal] of Object.entries(localData)) {
           const remoteVal = merged[key];
-          if(!remoteVal) {
+          if(key.startsWith("config:")) {
+            merged[key]=localVal;
+          } else if(!remoteVal) {
             merged[key] = localVal;
           } else {
             merged[key] = countData(localVal) >= countData(remoteVal) ? localVal : remoteVal;
@@ -2319,7 +2411,7 @@ useEffect(()=>{
       setSaving(false);
     }, 3000);
     return()=>clearTimeout(t);
-  },[month]);
+  },[month,configVersion]);
 
   const migrateMonth = (d, key) => {
     if(!d) return null;
@@ -2331,7 +2423,7 @@ useEffect(()=>{
       plantoes:mergePlantoesConfig(d.plantoes||seed.plantoes),
       bolsaDia:d.bolsaDia||5, bolsaStatus:d.bolsaStatus||"aguardando",
       auxilioDia:d.auxilioDia||5, auxilioStatus:d.auxilioStatus||"aguardando",
-      fixas:d.fixas||seed.fixas, investimentos:normalizeInvestimentos(d.investimentos||seed.investimentos),
+      fixas:d.fixas||seed.fixas, receitasFixas:Array.isArray(d.receitasFixas)?d.receitasFixas:seed.receitasFixas, investimentos:normalizeInvestimentos(d.investimentos||seed.investimentos),
       investimentosFotoConfirmada:hasFotoInvestimentos(d),
       bolsa:d.bolsa||0, auxilio:d.auxilio||0, receitasExtra:d.receitasExtra||[],
     };
@@ -2413,7 +2505,7 @@ useEffect(()=>{
   const backupToDrive = async () => {
     setGdriveStatus("connecting");
     try {
-      const allKeys = Object.keys(localStorage).filter(k=>k.startsWith("month:"));
+      const allKeys = Object.keys(localStorage).filter(k=>k.startsWith("month:")||k.startsWith("config:"));
       const localData = {};
       for(const key of allKeys) {
         try { localData[key] = JSON.parse(localStorage.getItem(key)); } catch {}
@@ -2436,6 +2528,10 @@ useEffect(()=>{
       for(const [key,val] of Object.entries(remoteData)) {
         localStorage.setItem(key, typeof val==="string"?val:JSON.stringify(val));
       }
+      if(Array.isArray(remoteData["config:cats"])) { CATS=remoteData["config:cats"]; setCatsState(CATS); }
+      if(Array.isArray(remoteData["config:agenda-locais"])) { LOCAIS_CONFIG=remoteData["config:agenda-locais"]; setLocaisConfigState(LOCAIS_CONFIG); }
+      if(Array.isArray(remoteData["config:fixas"])) { FIXAS_CONFIG=remoteData["config:fixas"]; setFixasConfigState(FIXAS_CONFIG); }
+      if(Array.isArray(remoteData["config:receitas-fixas"])) { RECEITAS_FIXAS_CONFIG=remoteData["config:receitas-fixas"]; setReceitasFixasConfigState(RECEITAS_FIXAS_CONFIG); }
       // Recarrega mês atual
       const cur = localStorage.getItem(storageKey);
       if(cur) {
@@ -2537,12 +2633,12 @@ useEffect(()=>{
           {!month?<div style={{textAlign:"center",padding:"60px 0",color:"#cbd5e1"}}>Carregando…</div>
             :view==="dashboard"?<Dashboard month={month} setView={setView}/>
             :view==="plantoes"?<PlantoesView month={month} setMonth={setMonthRaw} mesKey={mesKey} locaisConfig={locaisConfig} setLocaisConfig={setLocaisConfig}/>
-            :view==="fixas"?<FixasView month={month} setMonth={setMonthRaw}/>
+            :view==="fixas"?<FixasView month={month} setMonth={setMonthRaw} setFixasConfig={setFixasConfig}/>
             :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw} mesKey={mesKey} importCardEntries={importCardEntries} projectMonthInstallments={projectMonthInstallments}/>
             :view==="variaveis"?<PixView month={month} setMonth={setMonthRaw}/>
             :view==="investimentos"?<InvestView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="analise"?<AnáliseView month={month} mesKey={mesKey} setMonth={setMonthRaw}/>
-            :view==="config"?<ConfigView cats={cats} setCats={setCats} locaisConfig={locaisConfig} setLocaisConfig={setLocaisConfig}/>
+            :view==="config"?<ConfigView cats={cats} setCats={setCats} locaisConfig={locaisConfig} setLocaisConfig={setLocaisConfig} fixasConfig={fixasConfig} setFixasConfig={setFixasConfig} receitasFixasConfig={receitasFixasConfig} setReceitasFixasConfig={setReceitasFixasConfig}/>
             :null}
         </div>
 
