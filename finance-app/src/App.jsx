@@ -1415,23 +1415,6 @@ function InvestView({month,setMonth,mesKey}) {
   const maxHist=Math.max(...atuMeses,1);
   const mesesComDado=mesesOrdenados.filter((k,i)=>atuMeses[i]>0).length;
 
-  // Projeção — extrapola a taxa média de crescimento mensal observada no histórico
-  const idxComDado=atuMeses.map((v,i)=>v>0?i:-1).filter(i=>i>=0);
-  let projecao=null;
-  if(idxComDado.length>=2){
-    const i0=idxComDado[0], i1=idxComDado[idxComDado.length-1];
-    const n=i1-i0;
-    if(n>=1&&atuMeses[i0]>0){
-      const taxaMensal=Math.pow(atuMeses[i1]/atuMeses[i0],1/n)-1;
-      projecao={
-        meses:n,
-        taxaMensal,
-        proj6:atuMeses[i1]*Math.pow(1+taxaMensal,6),
-        proj12:atuMeses[i1]*Math.pow(1+taxaMensal,12),
-      };
-    }
-  }
-
   return (
     <div className="view-stack">
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
@@ -1553,37 +1536,6 @@ function InvestView({month,setMonth,mesKey}) {
         )}
       </Card>
 
-      {/* Projeção */}
-      <Card>
-        <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>
-          Projeção
-        </div>
-        {loadingHistory?(
-          <div style={{textAlign:"center",padding:"20px 0",color:"#94a3b8",fontSize:12}}>Carregando…</div>
-        ):!projecao?(
-          <div style={{textAlign:"center",padding:"12px 0",color:"#94a3b8",fontSize:11}}>Histórico insuficiente pra projetar — precisa de pelo menos 2 meses com saldo</div>
-        ):(
-          <>
-            <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>
-              Com base no crescimento médio dos últimos {projecao.meses} mês(es) (~{(projecao.taxaMensal*100).toFixed(2)}% ao mês):
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              <div style={{textAlign:"center",background:"rgba(15,23,42,.03)",borderRadius:10,padding:"10px 4px"}}>
-                <div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase",letterSpacing:.5}}>Em 6 meses</div>
-                <div className="mono" style={{fontSize:15,color:"#6d28d9",fontWeight:600,marginTop:3}}>{fmtBRL(projecao.proj6)}</div>
-              </div>
-              <div style={{textAlign:"center",background:"rgba(15,23,42,.03)",borderRadius:10,padding:"10px 4px"}}>
-                <div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase",letterSpacing:.5}}>Em 12 meses</div>
-                <div className="mono" style={{fontSize:15,color:"#6d28d9",fontWeight:600,marginTop:3}}>{fmtBRL(projecao.proj12)}</div>
-              </div>
-            </div>
-            <div style={{fontSize:9,color:"#94a3b8",marginTop:10,lineHeight:1.6}}>
-              Extrapolação simples do seu histórico dentro do app — não considera novos aportes, mudanças de mercado ou rebalanceamento. Não é recomendação de investimento.
-            </div>
-          </>
-        )}
-      </Card>
-
       {/* Lista de ativos */}
       <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,padding:"4px 0 2px"}}>
         Ativos
@@ -1685,7 +1637,7 @@ function InvestView({month,setMonth,mesKey}) {
 
 function AnáliseView({month, mesKey, setMonth}) {
   const [catSel, setCatSel] = useState(null);
-  const [visao, setVisao] = useState("mes"); // "mes" | "anual"
+  const [visao, setVisao] = useState("mes"); // "mes" | "anual" | "investimentos"
   const [allMonths, setAllMonths] = useState({});
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [catAnual, setCatAnual] = useState(null);
@@ -1719,7 +1671,7 @@ function AnáliseView({month, mesKey, setMonth}) {
       setAllMonths(map);
       setLoadingHistory(false);
     });
-  },[mesKey]);
+  },[mesKey,month]);
 
   // Atualiza tag de um lançamento
   const setTag = (lancId, tag) => {
@@ -1789,14 +1741,47 @@ function AnáliseView({month, mesKey, setMonth}) {
   }) : [];
   const maxCat = Math.max(...catDados,1);
 
+  // Projeção patrimonial: separa aportes líquidos do rendimento observado entre
+  // fotografias consecutivas, evitando confundir dinheiro novo com rentabilidade.
+  const mesesInvestimento=Object.keys(allMonths)
+    .filter(k=>k<=curMes())
+    .sort()
+    .map(k=>({key:k,month:allMonths[k],total:(allMonths[k]?.investimentos||[]).reduce((s,i)=>s+Number(i.atual||0),0)}))
+    .filter(x=>x.total>0);
+  const retornosMensais=[];
+  for(let i=1;i<mesesInvestimento.length;i++){
+    const prev=mesesInvestimento[i-1], atual=mesesInvestimento[i];
+    if(addMonthsKey(prev.key,1)!==atual.key) continue;
+    const aporte=(prev.month.investimentos||[]).reduce((s,x)=>s+Number(x.aporte||0)-Number(x.resgate||0),0);
+    const base=prev.total+aporte/2;
+    if(base<=0) continue;
+    const taxa=(atual.total-prev.total-aporte)/base;
+    if(Number.isFinite(taxa)&&taxa>-0.95&&taxa<1) retornosMensais.push(taxa);
+  }
+  const mesesAporte=mesesInvestimento.filter(x=>x.key<curMes()).slice(-6);
+  const aporteMedio=mesesAporte.length
+    ?mesesAporte.reduce((s,x)=>s+(x.month.investimentos||[]).reduce((ss,i)=>ss+Number(i.aporte||0)-Number(i.resgate||0),0),0)/mesesAporte.length
+    :0;
+  const taxaMedia=retornosMensais.length
+    ?Math.pow(retornosMensais.reduce((p,t)=>p*(1+t),1),1/retornosMensais.length)-1
+    :null;
+  const patrimonioBase=mesesInvestimento.at(-1)?.total||0;
+  const horizonteInvestimentos=taxaMedia===null?[]:[1,5,10,20].map(anos=>{
+    const meses=anos*12;
+    let total=patrimonioBase;
+    for(let i=0;i<meses;i++) total=Math.max(0,total*(1+taxaMedia)+aporteMedio);
+    const aportado=patrimonioBase+aporteMedio*meses;
+    return {anos,total,aportado,rendimento:total-aportado};
+  });
+
   const mesLabelAtual = mesLabel(mesKey);
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
 
-      {/* Toggle Mês / Anual */}
+      {/* Alterna entre as análises */}
       <div style={{display:"flex",gap:4,background:"rgba(15,23,42,.04)",borderRadius:12,padding:4}}>
-        {[["mes","📅 Mês"],["anual","📊 Anual"]].map(([v,l])=>(
+        {[["mes","📅 Mês"],["anual","📊 Anual"],["investimentos","📈 Investimentos"]].map(([v,l])=>(
           <button key={v} onClick={()=>setVisao(v)} style={{
             flex:1,padding:"8px",borderRadius:9,border:"none",
             background:visao===v?"rgba(124,106,247,.3)":"transparent",
@@ -1804,6 +1789,43 @@ function AnáliseView({month, mesKey, setMonth}) {
           }}>{l}</button>
         ))}
       </div>
+
+      {visao==="investimentos"&&<>
+        <Card style={{background:"linear-gradient(135deg,rgba(91,88,214,.09),rgba(21,128,61,.06))",borderColor:"rgba(91,88,214,.18)"}}>
+          <div style={{fontSize:10,color:"#5b58d6",fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>Projeção de patrimônio</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8}}>
+            <div style={{background:"rgba(255,255,255,.7)",borderRadius:10,padding:10}}>
+              <div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase"}}>Patrimônio inicial</div>
+              <div className="mono" style={{fontSize:15,color:"#172033",fontWeight:700,marginTop:3}}>{fmtBRL(patrimonioBase)}</div>
+            </div>
+            <div style={{background:"rgba(255,255,255,.7)",borderRadius:10,padding:10}}>
+              <div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase"}}>Aporte líquido médio</div>
+              <div className="mono" style={{fontSize:15,color:"#6d28d9",fontWeight:700,marginTop:3}}>{fmtBRL(aporteMedio)}<span style={{fontSize:9,fontWeight:400}}> /mês</span></div>
+            </div>
+            <div style={{background:"rgba(255,255,255,.7)",borderRadius:10,padding:10}}>
+              <div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase"}}>Rendimento médio</div>
+              <div className="mono" style={{fontSize:15,color:taxaMedia!==null&&taxaMedia>=0?"#15803d":"#dc2626",fontWeight:700,marginTop:3}}>{taxaMedia===null?"—":`${taxaMedia>=0?"+":""}${(taxaMedia*100).toFixed(2)}%`}<span style={{fontSize:9,fontWeight:400}}> /mês</span></div>
+            </div>
+          </div>
+        </Card>
+
+        {taxaMedia===null||patrimonioBase<=0?(
+          <Card><div style={{textAlign:"center",padding:"14px 0",color:"#7c8799",fontSize:11,lineHeight:1.6}}>São necessárias pelo menos duas fotografias mensais consecutivas da carteira para separar aportes e rendimento e gerar a projeção.</div></Card>
+        ):(
+          <Card>
+            <div style={{fontSize:10,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:.8,marginBottom:12}}>Cenário mantendo a tendência atual</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:9}}>
+              {horizonteInvestimentos.map(p=><div key={p.anos} style={{background:"rgba(15,23,42,.03)",border:"1px solid rgba(15,23,42,.06)",borderRadius:11,padding:11}}>
+                <div style={{fontSize:10,color:"#5b58d6",fontWeight:700}}>Em {p.anos} {p.anos===1?"ano":"anos"}</div>
+                <div className="mono" style={{fontSize:17,color:"#172033",fontWeight:700,margin:"4px 0 8px"}}>{fmtBRL(p.total)}</div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#7c8799",gap:6}}><span>Capital + aportes</span><span className="mono">{fmtBRL(p.aportado)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:p.rendimento>=0?"#15803d":"#dc2626",gap:6,marginTop:3}}><span>Rendimento projetado</span><span className="mono">{fmtBRL(p.rendimento)}</span></div>
+              </div>)}
+            </div>
+            <div style={{fontSize:9,color:"#94a3b8",marginTop:12,lineHeight:1.6}}>Cálculo composto mês a mês com base nas fotografias registradas, no aporte líquido médio dos últimos {mesesAporte.length} mês(es) e no rendimento médio de {retornosMensais.length} intervalo(s) consecutivo(s). É uma simulação, não uma garantia nem recomendação de investimento.</div>
+          </Card>
+        )}
+      </>}
 
       {visao==="mes"&&<>
         {/* Balanço */}
@@ -2254,7 +2276,14 @@ function ConfigView({cats,setCats,locaisConfig,setLocaisConfig,fixasConfig,setFi
 }
 
 
-const NAV=[{id:"dashboard",label:"Início"},{id:"plantoes",label:"Receita"},{id:"fixas",label:"Fixas"},{id:"cartoes",label:"Cartões"},{id:"variaveis",label:"Variáveis"},{id:"investimentos",label:"Invest."},{id:"analise",label:"Análise"},{id:"config",label:"Config"}];
+const NAV_GROUPS=[
+  {id:"inicio",label:"Visão geral",shortLabel:"Início",defaultView:"dashboard",items:[{id:"dashboard",label:"Início"}]},
+  {id:"receita",label:"Receita",shortLabel:"Receita",defaultView:"plantoes",items:[{id:"plantoes",label:"Plantões e receitas"}]},
+  {id:"gastos",label:"Gastos",shortLabel:"Gastos",defaultView:"cartoes",items:[{id:"fixas",label:"Fixas"},{id:"cartoes",label:"Cartões"},{id:"variaveis",label:"Variáveis"}]},
+  {id:"analises",label:"Análise",shortLabel:"Análise",defaultView:"analise",items:[{id:"investimentos",label:"Investimentos"},{id:"analise",label:"Análises"}]},
+  {id:"sistema",label:"Ajustes",shortLabel:"Config",defaultView:"config",items:[{id:"config",label:"Configurações"}]},
+];
+const NAV=NAV_GROUPS.flatMap(g=>g.items);
 
 export default function App() {
   const [mesKey,setMesKeyRaw]=useState(curMes());
@@ -2598,6 +2627,7 @@ useEffect(()=>{
   const [autenticado, setAutenticado] = useState(()=>sessionStorage.getItem("auth")==="ok");
   const [senha, setSenha] = useState("");
   const [erroSenha, setErroSenha] = useState(false);
+  const activeNavGroup=NAV_GROUPS.find(g=>g.items.some(n=>n.id===view))||NAV_GROUPS[0];
 
   const tentarLogin = () => {
     if(senha === "1821") {
@@ -2668,12 +2698,11 @@ useEffect(()=>{
           </div>
           </div>
           <MonthNav mesKey={mesKey} setMesKey={setMesKeyRaw}/>
-          <div className="desktop-tabs" style={{display:"flex",gap:6,overflowX:"auto",padding:"10px 0 4px",scrollbarWidth:"none"}}>
-            {NAV.map(n=>(
-              <button key={n.id} onClick={()=>setView(n.id)} style={{padding:"6px 14px",borderRadius:20,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:view===n.id?"rgba(124,106,247,.25)":"rgba(15,23,42,.05)",color:view===n.id?"#5b58d6":"#64748b",flexShrink:0,transition:"all .2s"}}>
-                {n.label}
-              </button>
-            ))}
+          <div className="desktop-tabs" style={{display:"flex",gap:12,overflowX:"auto",padding:"10px 0 4px",scrollbarWidth:"none"}}>
+            {NAV_GROUPS.map(g=><div key={g.id} style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,paddingRight:4}}>
+              <span style={{fontSize:8,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginRight:1}}>{g.label}</span>
+              {g.items.map(n=><button key={n.id} onClick={()=>setView(n.id)} style={{padding:"6px 11px",borderRadius:20,border:"none",cursor:"pointer",fontSize:11,fontWeight:600,background:view===n.id?"rgba(124,106,247,.25)":"rgba(15,23,42,.05)",color:view===n.id?"#5b58d6":"#64748b",flexShrink:0,transition:"all .2s"}}>{n.label}</button>)}
+            </div>)}
           </div>
           <div style={{height:1,background:"rgba(15,23,42,.04)",marginTop:6}}/>
         </div>
@@ -2692,10 +2721,10 @@ useEffect(()=>{
         </div>
 
         <div className="mobile-nav" style={{position:"fixed",bottom:0,left:0,width:"100%",background:"rgba(255,255,255,.94)",backdropFilter:"blur(20px)",borderTop:"1px solid #dfe6ef",display:"flex",padding:"8px 4px 18px",boxShadow:"0 -8px 24px rgba(43,55,80,.08)"}}>
-          {NAV.filter(n=>["dashboard","plantoes","cartoes","variaveis","investimentos"].includes(n.id)).map(n=>(
-            <button key={n.id} onClick={()=>setView(n.id)} style={{flex:1,padding:"6px 2px",border:"none",background:"transparent",cursor:"pointer",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,color:view===n.id?"#5b58d6":"#94a3b8",transition:"color .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-              <div style={{width:20,height:2,borderRadius:1,background:view===n.id?"#5b58d6":"transparent",transition:"all .2s"}}/>
-              {n.label}
+          {NAV_GROUPS.filter(g=>g.id!=="sistema").map(g=>(
+            <button key={g.id} onClick={()=>setView(g.defaultView)} style={{flex:1,padding:"6px 2px",border:"none",background:"transparent",cursor:"pointer",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,color:activeNavGroup.id===g.id?"#5b58d6":"#94a3b8",transition:"color .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+              <div style={{width:20,height:2,borderRadius:1,background:activeNavGroup.id===g.id?"#5b58d6":"transparent",transition:"all .2s"}}/>
+              {g.shortLabel}
             </button>
           ))}
         </div>
