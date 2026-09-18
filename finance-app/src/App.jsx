@@ -2298,7 +2298,17 @@ export default function App() {
   const [configReady,setConfigReady]=useState(false);
   const [configVersion,setConfigVersion]=useState(0);
   const autoAgendaRunning=useRef(false);
+  const monthLoadRequest=useRef(0);
   const storageKey=`month:${mesKey}`;
+
+  // Persiste a fotografia atual antes de navegar. O autosave remoto continua
+  // com debounce, mas a troca de mês nunca pode descartar uma edição recente.
+  const changeMonth=(nextKey)=>{
+    if(month?.key===mesKey) {
+      localStorage.setItem(`month:${mesKey}`,JSON.stringify(month));
+    }
+    setMesKeyRaw(nextKey);
+  };
 
   const setCats=(newCats)=>{ CATS=newCats; setCatsState(newCats); save("config:cats",newCats); setConfigVersion(v=>v+1); };
   const setLocaisConfig=(newConfig)=>{
@@ -2378,21 +2388,27 @@ export default function App() {
 
   useEffect(()=>{
     if(!configReady) return;
+    const requestedKey=mesKey;
+    const requestId=++monthLoadRequest.current;
+    let cancelled=false;
     setMonthRaw(null);
-    load(storageKey).then(async d=>{
+    load(`month:${requestedKey}`).then(async d=>{
+      if(cancelled||requestId!==monthLoadRequest.current) return;
       if(!d){
-        const seed=seedMonth(mesKey);
+        const seed=seedMonth(requestedKey);
         // Continuidade: herda os nomes dos ativos, mas a fotografia do novo mês
         // precisa ser confirmada para não inventar rendimento.
         try{
-          const prev=await load(`month:${prevMesKey(mesKey)}`);
+          const prev=await load(`month:${prevMesKey(requestedKey)}`);
+          if(cancelled||requestId!==monthLoadRequest.current) return;
           if(prev?.investimentos?.length) seed.investimentos=normalizeInvestimentos(prev.investimentos).map(i=>({...i,aporte:0,resgate:0}));
         }catch{}
+        if(cancelled||requestId!==monthLoadRequest.current) return;
         setMonthRaw(seed);
         return;
       }
       // Migrate: ensure all fields exist (handles old 'pix' format)
-      const seed=seedMonth(mesKey);
+      const seed=seedMonth(requestedKey);
       const migrated={
         ...seed,
         ...d,
@@ -2410,10 +2426,15 @@ export default function App() {
         bolsa: d.bolsa||0,
         auxilio: d.auxilio||0,
         receitasExtra: d.receitasExtra||[],
+        // A chave vem da navegação, nunca do conteúdo salvo. Isso também
+        // recupera registros antigos que tenham sido gravados no mês errado.
+        key:requestedKey,
       };
+      if(cancelled||requestId!==monthLoadRequest.current) return;
       setMonthRaw(migrated);
     });
     setView("dashboard");
+    return()=>{cancelled=true;};
   },[mesKey,configReady]);
 
   // Atualiza automaticamente o mês atual e os próximos cinco meses para manter
@@ -2460,11 +2481,14 @@ export default function App() {
     run();
     return()=>{cancelled=true;};
   },[configReady,month?.key,mesKey,configVersion]);
-useEffect(()=>{
-    if(!month) return;
+  useEffect(()=>{
+    if(!month||month.key!==mesKey) return;
+
+    // O dado local é síncrono e deve ser salvo imediatamente. Apenas a
+    // sincronização de rede permanece com debounce.
+    localStorage.setItem(storageKey,JSON.stringify(month));
     setSaving(true);
     const t=setTimeout(async()=>{
-      await save(storageKey,month);
       // Auto-sync to Supabase (debounced 3s) — com merge seguro pra não sobrescrever dados melhores no servidor
       try {
         const allKeys = Object.keys(localStorage).filter(k=>k.startsWith("month:")||k.startsWith("config:"));
@@ -2489,7 +2513,7 @@ useEffect(()=>{
       setSaving(false);
     }, 3000);
     return()=>clearTimeout(t);
-  },[month,configVersion]);
+  },[month,mesKey,storageKey,configVersion]);
 
   const migrateMonth = (d, key) => {
     if(!d) return null;
@@ -2503,7 +2527,7 @@ useEffect(()=>{
       auxilioDia:d.auxilioDia||5, auxilioStatus:d.auxilioStatus||"aguardando",
       fixas:d.fixas||seed.fixas, receitasFixas:Array.isArray(d.receitasFixas)?d.receitasFixas:seed.receitasFixas, investimentos:normalizeInvestimentos(d.investimentos||seed.investimentos),
       investimentosFotoConfirmada:hasFotoInvestimentos(d),
-      bolsa:d.bolsa||0, auxilio:d.auxilio||0, receitasExtra:d.receitasExtra||[],
+      bolsa:d.bolsa||0, auxilio:d.auxilio||0, receitasExtra:d.receitasExtra||[], key,
     };
   };
 
@@ -2697,7 +2721,7 @@ useEffect(()=>{
             <div style={{width:6,height:6,borderRadius:"50%",background:saving?"#b45309":"#15803d",transition:"background .3s"}}/>
           </div>
           </div>
-          <MonthNav mesKey={mesKey} setMesKey={setMesKeyRaw}/>
+          <MonthNav mesKey={mesKey} setMesKey={changeMonth}/>
           <div className="desktop-tabs" style={{display:"flex",gap:12,overflowX:"auto",padding:"10px 0 4px",scrollbarWidth:"none"}}>
             {NAV_GROUPS.map(g=><div key={g.id} style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,paddingRight:4}}>
               <span style={{fontSize:8,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:.8,marginRight:1}}>{g.label}</span>
