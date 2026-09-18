@@ -2299,6 +2299,7 @@ export default function App() {
   const [configVersion,setConfigVersion]=useState(0);
   const autoAgendaRunning=useRef(false);
   const monthLoadRequest=useRef(0);
+  const hydratingMonth=useRef(false);
   const storageKey=`month:${mesKey}`;
 
   // Persiste a fotografia atual antes de navegar. O autosave remoto continua
@@ -2368,7 +2369,13 @@ export default function App() {
         const remoteData=await supabaseLoad();
         if(remoteData) {
           for(const [key,val] of Object.entries(remoteData)) {
-            if(hasLocal&&!key.startsWith("config:")) continue;
+            if(hasLocal&&!key.startsWith("config:")) {
+              let localVal=null;
+              try { localVal=JSON.parse(localStorage.getItem(key)); } catch {}
+              const localTime=Date.parse(localVal?.atualizadoEm||"")||0;
+              const remoteTime=Date.parse(val?.atualizadoEm||"")||0;
+              if(!remoteTime||remoteTime<=localTime) continue;
+            }
             localStorage.setItem(key, typeof val==="string"?val:JSON.stringify(val));
           }
         }
@@ -2404,6 +2411,7 @@ export default function App() {
           if(prev?.investimentos?.length) seed.investimentos=normalizeInvestimentos(prev.investimentos).map(i=>({...i,aporte:0,resgate:0}));
         }catch{}
         if(cancelled||requestId!==monthLoadRequest.current) return;
+        hydratingMonth.current=true;
         setMonthRaw(seed);
         return;
       }
@@ -2431,6 +2439,7 @@ export default function App() {
         key:requestedKey,
       };
       if(cancelled||requestId!==monthLoadRequest.current) return;
+      hydratingMonth.current=true;
       setMonthRaw(migrated);
     });
     setView("dashboard");
@@ -2484,9 +2493,17 @@ export default function App() {
   useEffect(()=>{
     if(!month||month.key!==mesKey) return;
 
+    if(hydratingMonth.current) {
+      hydratingMonth.current=false;
+      localStorage.setItem(storageKey,JSON.stringify(month));
+      setSaving(false);
+      return;
+    }
+
     // O dado local é síncrono e deve ser salvo imediatamente. Apenas a
     // sincronização de rede permanece com debounce.
-    localStorage.setItem(storageKey,JSON.stringify(month));
+    const changedMonth={...month,atualizadoEm:new Date().toISOString()};
+    localStorage.setItem(storageKey,JSON.stringify(changedMonth));
     setSaving(true);
     const t=setTimeout(async()=>{
       // Auto-sync to Supabase (debounced 3s) — com merge seguro pra não sobrescrever dados melhores no servidor
@@ -2505,7 +2522,14 @@ export default function App() {
           } else if(!remoteVal) {
             merged[key] = localVal;
           } else {
-            merged[key] = countData(localVal) >= countData(remoteVal) ? localVal : remoteVal;
+            const localTime=Date.parse(localVal?.atualizadoEm||"")||0;
+            const remoteTime=Date.parse(remoteVal?.atualizadoEm||"")||0;
+            if(localTime||remoteTime) {
+              merged[key]=localTime>=remoteTime?localVal:remoteVal;
+              if(remoteTime>localTime) localStorage.setItem(key,JSON.stringify(remoteVal));
+            } else {
+              merged[key] = countData(localVal) >= countData(remoteVal) ? localVal : remoteVal;
+            }
           }
         }
         await supabaseSave(merged);
