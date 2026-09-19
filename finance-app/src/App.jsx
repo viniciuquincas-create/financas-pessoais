@@ -63,7 +63,7 @@ const FIXAS_BASE = [
   { nome:"Ana (Chef)",      venc:"Dia 10", cat:"Casa",      duracao:"sempre" },
   { nome:"Unimed",          venc:"Dia 10", cat:"Saúde",     duracao:"sempre" },
   { nome:"Vivo",            venc:"Dia 20", cat:"Apps",      duracao:"sempre" },
-  { nome:"Consórcio",       venc:"Dia 05", cat:"Impostos",  duracao:"sempre" },
+  { nome:"Consórcio",       venc:"Dia 05", cat:"Consórcio", duracao:"sempre" },
   { nome:"FIES",            venc:"Dia 10", cat:"Educação",  duracao:"sempre" },
 ];
 const FIXAS_DEFAULT_CONFIG = FIXAS_BASE.map((f,i)=>({...f,id:i+1,valor:0,ativo:true}));
@@ -152,6 +152,9 @@ const getReceitasFixas = d => Array.isArray(d?.receitasFixas)
       {id:"auxilio",templateId:"auxilio",nome:"Auxílio moradia",icone:"🏠",valor:Number(d?.auxilio)||0,dia:Number(d?.auxilioDia)||5,status:d?.auxilioStatus||"aguardando",ativo:true},
     ];
 const totalReceitasFixas = d => getReceitasFixas(d).filter(r=>r.ativo!==false).reduce((s,r)=>s+Number(r.valor||0),0);
+const normalizarFixas = fixas => (fixas||[]).map(f=>
+  descKey(f?.nome)==="consorcio"?{...f,cat:"Consórcio"}:f
+);
 
 const normalizeInvestimentos = arr => (arr||[])
   .filter(i=>i&&i.produto)
@@ -2444,7 +2447,10 @@ export default function App() {
       if(!Array.isArray(agenda)||!agenda.length) agenda=Array.isArray(locaisLegado)&&locaisLegado.length?locaisLegado.map(nome=>makeLocalConfig(nome)):LOCAIS_DEFAULT_CONFIG;
       agenda=agenda.map(l=>typeof l==="string"?makeLocalConfig(l):makeLocalConfig(l.nome,l));
       LOCAIS_CONFIG=agenda;setLocaisConfigState(agenda);
-      if(Array.isArray(fixasSaved)){FIXAS_CONFIG=fixasSaved;setFixasConfigState(fixasSaved);}
+      if(Array.isArray(fixasSaved)){
+        const fixasNormalizadas=normalizarFixas(fixasSaved);
+        FIXAS_CONFIG=fixasNormalizadas;setFixasConfigState(fixasNormalizadas);save("config:fixas",fixasNormalizadas);
+      }
       if(Array.isArray(receitasSaved)){RECEITAS_FIXAS_CONFIG=receitasSaved;setReceitasFixasConfigState(receitasSaved);}
       setGdriveStatus("idle");
       setConfigReady(true);
@@ -2485,7 +2491,7 @@ export default function App() {
         bolsaStatus: d.bolsaStatus||"aguardando",
         auxilioDia: d.auxilioDia||5,
         auxilioStatus: d.auxilioStatus||"aguardando",
-        fixas: d.fixas||seed.fixas,
+        fixas: normalizarFixas(d.fixas||seed.fixas),
         receitasFixas:Array.isArray(d.receitasFixas)?d.receitasFixas:RECEITAS_FIXAS_CONFIG.filter(r=>r.ativo!==false).map(r=>({...r,templateId:r.id,status:r.id==="bolsa"?(d.bolsaStatus||"aguardando"):r.id==="auxilio"?(d.auxilioStatus||"aguardando"):"aguardando",valor:Number(r.id==="bolsa"&&d.bolsa||r.id==="auxilio"&&d.auxilio||r.valor)||0,dia:Number(r.id==="bolsa"&&d.bolsaDia||r.id==="auxilio"&&d.auxilioDia||r.dia)||0})),
         investimentos: normalizeInvestimentos(d.investimentos||seed.investimentos),
         investimentosFotoConfirmada: hasFotoInvestimentos(d),
@@ -2607,7 +2613,7 @@ export default function App() {
       plantoes:mergePlantoesConfig(d.plantoes||seed.plantoes),
       bolsaDia:d.bolsaDia||5, bolsaStatus:d.bolsaStatus||"aguardando",
       auxilioDia:d.auxilioDia||5, auxilioStatus:d.auxilioStatus||"aguardando",
-      fixas:d.fixas||seed.fixas, receitasFixas:Array.isArray(d.receitasFixas)?d.receitasFixas:seed.receitasFixas, investimentos:normalizeInvestimentos(d.investimentos||seed.investimentos),
+      fixas:normalizarFixas(d.fixas||seed.fixas), receitasFixas:Array.isArray(d.receitasFixas)?d.receitasFixas:seed.receitasFixas, investimentos:normalizeInvestimentos(d.investimentos||seed.investimentos),
       investimentosFotoConfirmada:hasFotoInvestimentos(d),
       bolsa:d.bolsa||0, auxilio:d.auxilio||0, receitasExtra:d.receitasExtra||[], key,
     };
@@ -2714,7 +2720,7 @@ export default function App() {
       }
       if(Array.isArray(remoteData["config:cats"])) { CATS=remoteData["config:cats"]; setCatsState(CATS); }
       if(Array.isArray(remoteData["config:agenda-locais"])) { LOCAIS_CONFIG=remoteData["config:agenda-locais"]; setLocaisConfigState(LOCAIS_CONFIG); }
-      if(Array.isArray(remoteData["config:fixas"])) { FIXAS_CONFIG=remoteData["config:fixas"]; setFixasConfigState(FIXAS_CONFIG); }
+      if(Array.isArray(remoteData["config:fixas"])) { FIXAS_CONFIG=normalizarFixas(remoteData["config:fixas"]); setFixasConfigState(FIXAS_CONFIG); save("config:fixas",FIXAS_CONFIG); }
       if(Array.isArray(remoteData["config:receitas-fixas"])) { RECEITAS_FIXAS_CONFIG=remoteData["config:receitas-fixas"]; setReceitasFixasConfigState(RECEITAS_FIXAS_CONFIG); }
       // Recarrega mês atual
       const cur = localStorage.getItem(storageKey);
