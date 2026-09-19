@@ -255,6 +255,19 @@ const Btn = ({children,onClick,color="#5b58d6",outline,style={}}) => (
   </button>
 );
 
+const DivisaoBadge = ({item,onToggle}) => {
+  const ativo=Number(item?.percentualPessoal)===50;
+  return <button type="button" onClick={e=>{e.stopPropagation();onToggle?.(!ativo);}}
+    title={ativo?`Dividido 50% com ${item?.divididoCom||"Francisco"}. Toque para remover.`:"Toque para dividir 50% com Francisco"}
+    aria-label={ativo?"Remover divisão de 50%":"Dividir despesa em 50%"}
+    style={{display:"inline-flex",alignItems:"center",gap:3,padding:"2px 6px",borderRadius:999,
+      border:`1px solid ${ativo?"rgba(21,128,61,.28)":"rgba(100,116,139,.18)"}`,
+      background:ativo?"rgba(21,128,61,.08)":"rgba(100,116,139,.035)",
+      color:ativo?"#15803d":"#94a3b8",fontSize:9,fontWeight:700,cursor:"pointer",lineHeight:1.4}}>
+    <span aria-hidden="true">½</span><span>{ativo?"dividido":"50%"}</span>
+  </button>;
+};
+
 function MonthNav({mesKey,setMesKey}) {
   const [y,m]=mesKey.split("-").map(Number);
   const go=d=>{ const dt=new Date(y,m-1+d); setMesKey(`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}`); };
@@ -270,7 +283,7 @@ function MonthNav({mesKey,setMesKey}) {
 function Dashboard({month,setView}) {
   const plantaoT=month.plantoes.filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0);
   const recT=plantaoT+totalReceitasFixas(month)+(month.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
-  const fixT=month.fixas.reduce((s,f)=>s+Number(f.valor||0),0);
+  const fixT=month.fixas.reduce((s,f)=>s+valorPessoal(f),0);
   const carT=Object.values(month.cartoes).flat().reduce((s,t)=>s+valorPessoal(t),0);
   const pixT=(month.variaveis||[]).reduce((s,p)=>s+valorPessoal(p),0);
   const aportesT=(month.investimentos||[]).reduce((s,i)=>s+Number(i.aporte||0),0);
@@ -714,6 +727,7 @@ function FixaCard({f, editing, setEditing, onUpd, onRemove, onRemovePermanent}) 
           <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
             <span style={{fontSize:14,fontWeight:600,color:f.status==="pago"?"#15803d":"#172033"}}>{f.nome}</span>
             {f.extra&&<span style={{fontSize:9,color:"#b45309",background:"rgba(251,191,36,.12)",padding:"1px 6px",borderRadius:6}}>extra</span>}
+            <DivisaoBadge item={f} onToggle={dividido=>onUpd(f.id,"percentualPessoal",dividido?50:100)}/>
           </div>
           <div style={{fontSize:11,color:"#7c8799",marginTop:1}}>{f.venc&&`${f.venc} · `}{f.cat}{f.duracao&&f.duracao!=="sempre"?` · ${f.duracao==="mes"?"só este mês":f.duracao}`:""}</div>
         </div>
@@ -802,7 +816,7 @@ function FixasView({month,setMonth,setFixasConfig}) {
     setShowAdd(false);
   };
 
-  const total=month.fixas.reduce((s,f)=>s+Number(f.valor||0),0);
+  const total=month.fixas.reduce((s,f)=>s+valorPessoal(f),0);
   const pend=month.fixas.filter(f=>f.status==="pendente").length;
   const grupos=[["pendente","⏳ Pendentes","#b45309"],["pago","✓ Pagas","#15803d"]];
 
@@ -1137,8 +1151,14 @@ Retorne SOMENTE o array JSON.`;
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,color:"#172033",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
               <div style={{fontSize:10,color:"#64748b",marginTop:1}}>{t.data||""}{t.parcela?` · Parcela ${t.parcela}`:""}</div>
-              {Number(t.percentualPessoal)===50&&<div style={{fontSize:10,color:"#15803d",marginTop:3,fontWeight:600}}>Dividido com {t.divididoCom||"Francisco"} · sua parte {fmtBRL(valorPessoal(t))}</div>}
-              {t.projetado&&<div style={{display:"inline-flex",marginTop:4,padding:"2px 7px",borderRadius:999,background:"rgba(91,88,214,.08)",color:"#5b58d6",fontSize:9,fontWeight:700}}>PREVISTO · será conciliado ao importar a fatura</div>}
+              <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",marginTop:4}}>
+                <DivisaoBadge item={t} onToggle={dividido=>{
+                  const updated=(month.cartoes[activeCard]||[]).map(x=>x.id===t.id?{...x,percentualPessoal:dividido?50:100,divididoCom:dividido?"Francisco":null}:x);
+                  setMonth({...month,cartoes:{...month.cartoes,[activeCard]:updated}});
+                }}/>
+                {t.projetado&&<div style={{display:"inline-flex",padding:"2px 7px",borderRadius:999,background:"rgba(91,88,214,.08)",color:"#5b58d6",fontSize:9,fontWeight:700}}>PREVISTO</div>}
+                {Number(t.percentualPessoal)===50&&<span style={{fontSize:9,color:"#15803d"}}>sua parte {fmtBRL(valorPessoal(t))}</span>}
+              </div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
               <span className="mono" style={{fontSize:14,color:card.color,fontWeight:600}}>{fmtBRL(t.valor)}</span>
@@ -1157,13 +1177,6 @@ Retorne SOMENTE o array JSON.`;
             }}>
               {CATS.map(cat=><option key={cat} value={cat}>{cat}</option>)}
             </select>
-            <button onClick={()=>{
-              const dividido=Number(t.percentualPessoal)!==50;
-              const updated=(month.cartoes[activeCard]||[]).map(x=>x.id===t.id?{...x,percentualPessoal:dividido?50:100,divididoCom:dividido?"Francisco":null}:x);
-              setMonth({...month,cartoes:{...month.cartoes,[activeCard]:updated}});
-            }} style={{marginTop:6,width:"100%",padding:"5px 10px",borderRadius:8,border:`1px solid ${Number(t.percentualPessoal)===50?"rgba(21,128,61,.3)":"rgba(15,23,42,.1)"}`,background:Number(t.percentualPessoal)===50?"rgba(21,128,61,.08)":"transparent",color:Number(t.percentualPessoal)===50?"#15803d":"#64748b",fontSize:10,fontWeight:600,cursor:"pointer"}}>
-              {Number(t.percentualPessoal)===50?"✓ Dividido 50% com Francisco":"Marcar como dividido 50%"}
-            </button>
           </div>
         </Card>
       ))}
@@ -1195,7 +1208,7 @@ Retorne SOMENTE o array JSON.`;
 function PixView({month,setMonth}) {
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({desc:"",cat:CATS[0],data:today(),banco:"Inter",valor:""});
-  const total=(month.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
+  const total=(month.variaveis||[]).reduce((s,p)=>s+valorPessoal(p),0);
   const onPdfSelect=e=>{
     const f=e.target.files?.[0];
     if(f&&f.type==="application/pdf"){setPdfFile(f);setPdfPreview([]);}
@@ -1300,6 +1313,10 @@ Retorne SOMENTE o array JSON.`;
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,color:"#172033"}}>{p.desc}</div>
               <div style={{fontSize:11,color:"#7c8799"}}>{p.cat} · {p.banco} · {p.data}</div>
+              <div style={{display:"flex",alignItems:"center",gap:5,marginTop:4}}>
+                <DivisaoBadge item={p} onToggle={dividido=>setMonth({...month,variaveis:(month.variaveis||[]).map(x=>x.id===p.id?{...x,percentualPessoal:dividido?50:100,divididoCom:dividido?"Francisco":null}:x)})}/>
+                {Number(p.percentualPessoal)===50&&<span style={{fontSize:9,color:"#15803d"}}>sua parte {fmtBRL(valorPessoal(p))}</span>}
+              </div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:8,flexShrink:0}}>
               <span className="mono" style={{fontSize:14,color:"#0e7490",fontWeight:500}}>{fmtBRL(p.valor)}</span>
@@ -1731,7 +1748,7 @@ function AnáliseView({month, mesKey, setMonth}) {
   const sortedAtual = Object.entries(catTotaisAtual).sort((a,b)=>b[1]-a[1]);
   const grandTotal = sortedAtual.reduce((s,[,v])=>s+v, 0);
 
-  const fixT  = (month.fixas||[]).reduce((s,f)=>s+Number(f.valor||0),0);
+  const fixT  = (month.fixas||[]).reduce((s,f)=>s+valorPessoal(f),0);
   const carT  = Object.values(month.cartoes||{}).flat().reduce((s,t)=>s+valorPessoal(t),0);
   const varT  = (month.variaveis||[]).reduce((s,p)=>s+valorPessoal(p),0);
   const recT  = (month.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0)
@@ -1761,7 +1778,7 @@ function AnáliseView({month, mesKey, setMonth}) {
   };
   const getDespT = md => {
     if(!md) return 0;
-    return (md.fixas||[]).reduce((s,f)=>s+Number(f.valor||0),0)
+    return (md.fixas||[]).reduce((s,f)=>s+valorPessoal(f),0)
       + Object.values(md.cartoes||{}).flat().reduce((s,t)=>s+valorPessoal(t),0)
       + (md.variaveis||[]).reduce((s,p)=>s+valorPessoal(p),0);
   };
