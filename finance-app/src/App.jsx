@@ -92,6 +92,11 @@ const AGENDA_URL = "https://script.google.com/macros/s/AKfycbxDfXcA9Fs8KUM8yEU0c
 const MESES  = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
 const fmtBRL = v => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(v||0);
+const valorPessoal = lancamento => {
+  const informado=lancamento?.percentualPessoal;
+  const percentual=informado==null?100:Number(informado);
+  return Number(lancamento?.valor||0)*(Number.isFinite(percentual)?percentual/100:1);
+};
 const today  = () => new Date().toISOString().split("T")[0];
 const curMes = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 const mesLabel = k => { const[y,m]=k.split("-"); return `${MESES[+m-1].toUpperCase()} / ${y}`; };
@@ -104,6 +109,13 @@ const parseParcela = parcela => {
   return atual>=1&&total>=atual?{atual,total}:null;
 };
 const descKey = desc => String(desc||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]/g,"");
+const aplicarRegraCompartilhada = lancamento => {
+  const d=descKey(lancamento?.desc);
+  const compartilhado=["airbnbpagamairb","clube04campobelo","symplasympla2u","mercadomercadolivre"].some(chave=>d.includes(chave));
+  return compartilhado
+    ? {...lancamento,percentualPessoal:50,divididoCom:"Francisco"}
+    : lancamento;
+};
 const sameCardEntry = (a,b) => descKey(a.desc)===descKey(b.desc)
   && Math.abs(Number(a.valor||0)-Number(b.valor||0))<0.01
   && String(a.parcela||"").replace(/\s/g,"")===String(b.parcela||"").replace(/\s/g,"");
@@ -259,8 +271,8 @@ function Dashboard({month,setView}) {
   const plantaoT=month.plantoes.filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0);
   const recT=plantaoT+totalReceitasFixas(month)+(month.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
   const fixT=month.fixas.reduce((s,f)=>s+Number(f.valor||0),0);
-  const carT=Object.values(month.cartoes).flat().reduce((s,t)=>s+Number(t.valor||0),0);
-  const pixT=(month.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
+  const carT=Object.values(month.cartoes).flat().reduce((s,t)=>s+valorPessoal(t),0);
+  const pixT=(month.variaveis||[]).reduce((s,p)=>s+valorPessoal(p),0);
   const aportesT=(month.investimentos||[]).reduce((s,i)=>s+Number(i.aporte||0),0);
   const resgatesT=(month.investimentos||[]).reduce((s,i)=>s+Number(i.resgate||0),0);
   const patrimonioT=(month.investimentos||[]).reduce((s,i)=>s+Number(i.atual||0),0);
@@ -268,7 +280,7 @@ function Dashboard({month,setView}) {
   const despT=fixT+carT+pixT;
   const fixPend=month.fixas.filter(f=>f.status==="pendente"&&Number(f.valor)>0).length;
   const catMap={};
-  [...Object.values(month.cartoes).flat(),...(month.variaveis||[]),...month.fixas.filter(f=>Number(f.valor)>0)].forEach(t=>{ catMap[t.cat]=(catMap[t.cat]||0)+Number(t.valor||0); });
+  [...Object.values(month.cartoes).flat(),...(month.variaveis||[]),...month.fixas.filter(f=>Number(f.valor)>0)].forEach(t=>{ catMap[t.cat]=(catMap[t.cat]||0)+valorPessoal(t); });
   const topCats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const agendaOk=(month.plantoes||[]).some(p=>p.fromAgenda&&p.ativo!==false);
   const recAtrasado=[
@@ -867,6 +879,7 @@ function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthIn
   const card=CARDS.find(c=>c.id===activeCard);
   const items=month.cartoes[activeCard]||[];
   const total=items.reduce((s,t)=>s+Number(t.valor||0),0);
+  const totalPessoal=items.reduce((s,t)=>s+valorPessoal(t),0);
   const previsto=items.filter(t=>t.projetado).reduce((s,t)=>s+Number(t.valor||0),0);
   const confirmado=total-previsto;
   const totalAll=Object.values(month.cartoes).flat().reduce((s,t)=>s+Number(t.valor||0),0);
@@ -876,6 +889,9 @@ function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthIn
   };
 
   const RULES_CAT = [
+    [["airbnb pagam*airb"],"Viagem"],
+    [["sympla*sympla 2u"],"Lazer"],
+    [["mercado*mercadolivre"],"Compras"],
     [["clube04 campo belo"],"Pet"],
     [["piriquito paes"],"Comer fora"],
     [["nespresso"],"Compras"],
@@ -934,7 +950,7 @@ Retorne SOMENTE o array JSON.`;
       const data=await res.json();
       const txt=data.content?.map(b=>b.text||"").join("")||"";
       const parsed=JSON.parse(txt.replace(/```json|```/g,"").trim());
-      const comCat=parsed.map(t=>({...t,valor:Number(t.valor||0),cat:categorizarLocal(t.desc),id:Date.now()+Math.random()}));
+      const comCat=parsed.map(t=>aplicarRegraCompartilhada({...t,valor:Number(t.valor||0),cat:categorizarLocal(t.desc),id:Date.now()+Math.random()}));
       setPdfPreview(comCat);
       setPdfMsg("");
     }catch(e){
@@ -993,6 +1009,10 @@ Retorne SOMENTE o array JSON.`;
           <div><div style={{fontSize:10,color:"#64748b"}}>{card.label}</div><div className="mono" style={{fontSize:22,color:card.color,fontWeight:600}}>{fmtBRL(total)}</div></div>
           <div style={{textAlign:"right"}}><div style={{fontSize:10,color:"#64748b"}}>Total cartões</div><div className="mono" style={{fontSize:16,color:"#dc2626"}}>{fmtBRL(totalAll)}</div></div>
         </div>
+        {Math.abs(total-totalPessoal)>0.009&&<div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${card.color}22`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:10,color:"#64748b"}}>Sua parte após divisões</span>
+          <span className="mono" style={{fontSize:14,color:"#15803d",fontWeight:700}}>{fmtBRL(totalPessoal)}</span>
+        </div>}
       </Card>
       {previsto>0&&(
         <Card style={{padding:"10px 14px",background:"rgba(91,88,214,.04)",borderColor:"rgba(91,88,214,.14)"}}>
@@ -1117,6 +1137,7 @@ Retorne SOMENTE o array JSON.`;
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,color:"#172033",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
               <div style={{fontSize:10,color:"#64748b",marginTop:1}}>{t.data||""}{t.parcela?` · Parcela ${t.parcela}`:""}</div>
+              {Number(t.percentualPessoal)===50&&<div style={{fontSize:10,color:"#15803d",marginTop:3,fontWeight:600}}>Dividido com {t.divididoCom||"Francisco"} · sua parte {fmtBRL(valorPessoal(t))}</div>}
               {t.projetado&&<div style={{display:"inline-flex",marginTop:4,padding:"2px 7px",borderRadius:999,background:"rgba(91,88,214,.08)",color:"#5b58d6",fontSize:9,fontWeight:700}}>PREVISTO · será conciliado ao importar a fatura</div>}
             </div>
             <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
@@ -1136,6 +1157,13 @@ Retorne SOMENTE o array JSON.`;
             }}>
               {CATS.map(cat=><option key={cat} value={cat}>{cat}</option>)}
             </select>
+            <button onClick={()=>{
+              const dividido=Number(t.percentualPessoal)!==50;
+              const updated=(month.cartoes[activeCard]||[]).map(x=>x.id===t.id?{...x,percentualPessoal:dividido?50:100,divididoCom:dividido?"Francisco":null}:x);
+              setMonth({...month,cartoes:{...month.cartoes,[activeCard]:updated}});
+            }} style={{marginTop:6,width:"100%",padding:"5px 10px",borderRadius:8,border:`1px solid ${Number(t.percentualPessoal)===50?"rgba(21,128,61,.3)":"rgba(15,23,42,.1)"}`,background:Number(t.percentualPessoal)===50?"rgba(21,128,61,.08)":"transparent",color:Number(t.percentualPessoal)===50?"#15803d":"#64748b",fontSize:10,fontWeight:600,cursor:"pointer"}}>
+              {Number(t.percentualPessoal)===50?"✓ Dividido 50% com Francisco":"Marcar como dividido 50%"}
+            </button>
           </div>
         </Card>
       ))}
@@ -1174,6 +1202,9 @@ function PixView({month,setMonth}) {
   };
 
   const RULES_CAT = [
+    [["airbnb pagam*airb"],"Viagem"],
+    [["sympla*sympla 2u"],"Lazer"],
+    [["mercado*mercadolivre"],"Compras"],
     [["clube04 campo belo"],"Pet"],
     [["piriquito paes"],"Comer fora"],
     [["nespresso"],"Compras"],
@@ -1232,7 +1263,7 @@ Retorne SOMENTE o array JSON.`;
       const data=await res.json();
       const txt=data.content?.map(b=>b.text||"").join("")||"";
       const parsed=JSON.parse(txt.replace(/```json|```/g,"").trim());
-      const comCat=parsed.map(t=>({...t,valor:Number(t.valor||0),cat:categorizarLocal(t.desc),id:Date.now()+Math.random()}));
+      const comCat=parsed.map(t=>aplicarRegraCompartilhada({...t,valor:Number(t.valor||0),cat:categorizarLocal(t.desc),id:Date.now()+Math.random()}));
       setPdfPreview(comCat);
       setPdfMsg("");
     }catch(e){
@@ -1696,13 +1727,13 @@ function AnáliseView({month, mesKey, setMonth}) {
     ...(month.variaveis||[]),
   ];
   const catTotaisAtual = {};
-  todosAtual.forEach(t=>{ catTotaisAtual[t.cat]=(catTotaisAtual[t.cat]||0)+Number(t.valor||0); });
+  todosAtual.forEach(t=>{ catTotaisAtual[t.cat]=(catTotaisAtual[t.cat]||0)+valorPessoal(t); });
   const sortedAtual = Object.entries(catTotaisAtual).sort((a,b)=>b[1]-a[1]);
   const grandTotal = sortedAtual.reduce((s,[,v])=>s+v, 0);
 
   const fixT  = (month.fixas||[]).reduce((s,f)=>s+Number(f.valor||0),0);
-  const carT  = Object.values(month.cartoes||{}).flat().reduce((s,t)=>s+Number(t.valor||0),0);
-  const varT  = (month.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
+  const carT  = Object.values(month.cartoes||{}).flat().reduce((s,t)=>s+valorPessoal(t),0);
+  const varT  = (month.variaveis||[]).reduce((s,p)=>s+valorPessoal(p),0);
   const recT  = (month.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0)
               + totalReceitasFixas(month)
               + (month.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
@@ -1710,7 +1741,7 @@ function AnáliseView({month, mesKey, setMonth}) {
   const saldo = recT - totalDesp;
 
   // Economia potencial (evitáveis)
-  const evitavel = todosAtual.filter(t=>t.tag==="evitavel").reduce((s,t)=>s+Number(t.valor||0),0);
+  const evitavel = todosAtual.filter(t=>t.tag==="evitavel").reduce((s,t)=>s+valorPessoal(t),0);
   const semTag = todosAtual.filter(t=>!t.tag).length;
 
   // Lançamentos da categoria selecionada
@@ -1731,8 +1762,8 @@ function AnáliseView({month, mesKey, setMonth}) {
   const getDespT = md => {
     if(!md) return 0;
     return (md.fixas||[]).reduce((s,f)=>s+Number(f.valor||0),0)
-      + Object.values(md.cartoes||{}).flat().reduce((s,t)=>s+Number(t.valor||0),0)
-      + (md.variaveis||[]).reduce((s,p)=>s+Number(p.valor||0),0);
+      + Object.values(md.cartoes||{}).flat().reduce((s,t)=>s+valorPessoal(t),0)
+      + (md.variaveis||[]).reduce((s,p)=>s+valorPessoal(p),0);
   };
   const receitasMeses = mesesOrdenados.map(k=>getRecT(allMonths[k]));
   const despesasMeses = mesesOrdenados.map(k=>getDespT(allMonths[k]));
@@ -1745,7 +1776,7 @@ function AnáliseView({month, mesKey, setMonth}) {
   });
   const catDados = catAnual ? mesesOrdenados.map(k=>{
     const md=allMonths[k]; if(!md) return 0;
-    return [...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===catAnual).reduce((s,t)=>s+Number(t.valor||0),0);
+    return [...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===catAnual).reduce((s,t)=>s+valorPessoal(t),0);
   }) : [];
   const maxCat = Math.max(...catDados,1);
 
@@ -1931,7 +1962,7 @@ function AnáliseView({month, mesKey, setMonth}) {
                 {catSel}
               </div>
               <span className="mono" style={{fontSize:12,color:CORES_CAT[catSel]||"#5b58d6",fontWeight:700}}>
-                {fmtBRL(lancCatSel.reduce((s,t)=>s+Number(t.valor||0),0))}
+                {fmtBRL(lancCatSel.reduce((s,t)=>s+valorPessoal(t),0))}
               </span>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -1945,7 +1976,7 @@ function AnáliseView({month, mesKey, setMonth}) {
                         <div style={{fontSize:12,color:"#172033",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.desc}</div>
                         <div style={{fontSize:10,color:"#7c8799",marginTop:2}}>{t.data}{t.parcela?` · ${t.parcela}`:""}</div>
                       </div>
-                      <span className="mono" style={{fontSize:13,color:"#dc2626",fontWeight:600,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
+                      <span className="mono" style={{fontSize:13,color:"#dc2626",fontWeight:600,marginLeft:8,flexShrink:0}}>{fmtBRL(valorPessoal(t))}</span>
                     </div>
                     {/* Tags */}
                     <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
@@ -1984,7 +2015,7 @@ function AnáliseView({month, mesKey, setMonth}) {
                       {tagAtual&&<span style={{fontSize:9,color:tagAtual.color,background:tagAtual.bg,padding:"1px 5px",borderRadius:4}}>{tagAtual.label}</span>}
                     </div>
                   </div>
-                  <span className="mono" style={{fontSize:13,color:"#dc2626",fontWeight:500,marginLeft:8,flexShrink:0}}>{fmtBRL(t.valor)}</span>
+                  <span className="mono" style={{fontSize:13,color:"#dc2626",fontWeight:500,marginLeft:8,flexShrink:0}}>{fmtBRL(valorPessoal(t))}</span>
                 </div>
               );
             })}
@@ -2106,12 +2137,12 @@ function AnáliseView({month, mesKey, setMonth}) {
           {Array.from(todasCatsAnual).sort().map(cat=>{
             const total=mesesOrdenados.reduce((s,k)=>{
               const md=allMonths[k]; if(!md) return s;
-              return s+[...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===cat).reduce((ss,t)=>ss+Number(t.valor||0),0);
+              return s+[...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===cat).reduce((ss,t)=>ss+valorPessoal(t),0);
             },0);
             const cor=CORES_CAT[cat]||"#5b58d6";
             const maxTotal=Math.max(...Array.from(todasCatsAnual).map(c=>mesesOrdenados.reduce((s,k)=>{
               const md=allMonths[k]; if(!md) return s;
-              return s+[...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===c).reduce((ss,t)=>ss+Number(t.valor||0),0);
+              return s+[...Object.values(md.cartoes||{}).flat(),...(md.variaveis||[])].filter(t=>t.cat===c).reduce((ss,t)=>ss+valorPessoal(t),0);
             },0)),1);
             return (
               <div key={cat} style={{marginBottom:10,cursor:"pointer"}} onClick={()=>{setCatAnual(cat===catAnual?null:cat);}}>
@@ -2604,7 +2635,7 @@ export default function App() {
     const used=new Set();
     let conciliados=0;
     const normalized=rawEntries.map((raw,i)=>{
-      const incoming={...raw,valor:Number(raw.valor||0),id:raw.id||Date.now()+i+Math.random()};
+      const incoming=aplicarRegraCompartilhada({...raw,valor:Number(raw.valor||0),id:raw.id||Date.now()+i+Math.random()});
       const idx=existing.findIndex((x,j)=>!used.has(j)&&x.projetado&&sameCardEntry(x,incoming));
       if(idx>=0) {
         used.add(idx); conciliados++;

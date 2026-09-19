@@ -85,6 +85,9 @@ Retorne SOMENTE o array JSON.`;
 }
 
 const RULES = [
+  [["airbnb pagam*airb"],"Viagem"],
+  [["sympla*sympla 2u"],"Lazer"],
+  [["mercado*mercadolivre"],"Compras"],
   [["clube04 campo belo"],"Pet"],
   [["piriquito paes"],"Comer fora"],
   [["nespresso"],"Compras"],
@@ -110,6 +113,12 @@ function categorizar(desc) {
   const d = (desc||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
   for(const [keys,cat] of RULES) if(keys.some(k=>d.includes(k))) return cat;
   return "Outro";
+}
+
+function aplicarRegraCompartilhada(transacao) {
+  const d=(transacao?.desc||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]/g,"");
+  const compartilhado=["airbnbpagamairb","clube04campobelo","symplasympla2u","mercadomercadolivre"].some(chave=>d.includes(chave));
+  return compartilhado?{...transacao,percentualPessoal:50,divididoCom:"Francisco"}:transacao;
 }
 
 export default function App() {
@@ -155,7 +164,7 @@ export default function App() {
     const inc=transacoes.filter(t=>t.incluir);
     const total=inc.reduce((s,t)=>s+Number(t.valor||0),0);
     setJsonFinal(tipo==="fatura_cartao"
-      ?{tipo:"cartao",cartao,lancamentos:inc.map(({desc,cat,parcela,valor})=>({desc,cat,parcela,valor:Number(valor)})),total}
+      ?{tipo:"cartao",cartao,lancamentos:inc.map(({desc,cat,parcela,valor})=>aplicarRegraCompartilhada({desc,cat,parcela,valor:Number(valor)})),total}
       :{tipo:"variaveis",lancamentos:inc.map(({desc,cat,data,valor,tipo:tp})=>({desc,cat,banco:"Inter",data,tipo:tp,valor:Number(valor)})),total}
     );
     setStep("done");
