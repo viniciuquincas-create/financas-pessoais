@@ -903,6 +903,7 @@ function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthIn
   };
 
   const RULES_CAT = [
+    [["vida xp *vida xp","vida xp*vida xp"],"Seguro"],
     [["airbnb pagam*airb"],"Viagem"],
     [["sympla*sympla 2u"],"Lazer"],
     [["mercado*mercadolivre"],"Compras"],
@@ -1215,6 +1216,7 @@ function PixView({month,setMonth}) {
   };
 
   const RULES_CAT = [
+    [["vida xp *vida xp","vida xp*vida xp"],"Seguro"],
     [["airbnb pagam*airb"],"Viagem"],
     [["sympla*sympla 2u"],"Lazer"],
     [["mercado*mercadolivre"],"Compras"],

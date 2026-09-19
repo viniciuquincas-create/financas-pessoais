@@ -85,6 +85,7 @@ Retorne SOMENTE o array JSON.`;
 }
 
 const RULES = [
+  [["vida xp *vida xp","vida xp*vida xp"],"Seguro"],
   [["airbnb pagam*airb"],"Viagem"],
   [["sympla*sympla 2u"],"Lazer"],
   [["mercado*mercadolivre"],"Compras"],
