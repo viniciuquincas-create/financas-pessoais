@@ -876,6 +876,10 @@ function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthIn
   };
 
   const RULES_CAT = [
+    [["clube04 campo belo"],"Pet"],
+    [["piriquito paes"],"Comer fora"],
+    [["nespresso"],"Compras"],
+    [["ifd*osnir hamburger ltda"],"Delivery"],
     [["market4u","carrefour","assai","padaria","panificadora","piriquito","hortifruti","atacadao","pao de acucar","supermercado","minuto pa"],"Mercado"],
     [["sampa cafe","oxxo","hamburger","osnir","mani ","cantina","churrascaria","restaurante","lanchonete","pizza","delta quality","cafe ","lanche"],"Comer fora"],
     [["ifd*","ifood","rappi","zee now","delivery"],"Delivery"],
@@ -1170,6 +1174,10 @@ function PixView({month,setMonth}) {
   };
 
   const RULES_CAT = [
+    [["clube04 campo belo"],"Pet"],
+    [["piriquito paes"],"Comer fora"],
+    [["nespresso"],"Compras"],
+    [["ifd*osnir hamburger ltda"],"Delivery"],
     [["market4u","carrefour","assai","padaria","panificadora","piriquito","hortifruti","atacadao","pao de acucar","supermercado","minuto pa"],"Mercado"],
     [["sampa cafe","oxxo","hamburger","osnir","mani ","cantina","churrascaria","restaurante","lanchonete","pizza","delta quality","cafe ","lanche"],"Comer fora"],
     [["ifd*","ifood","rappi","zee now","delivery"],"Delivery"],

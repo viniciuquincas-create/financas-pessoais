@@ -85,6 +85,10 @@ Retorne SOMENTE o array JSON.`;
 }
 
 const RULES = [
+  [["clube04 campo belo"],"Pet"],
+  [["piriquito paes"],"Comer fora"],
+  [["nespresso"],"Compras"],
+  [["ifd*osnir hamburger ltda"],"Delivery"],
   [["market4u","carrefour","assai","padaria","panificadora","piriquito","hortifruti","atacadao","pao de acucar","supermercado"],"Mercado"],
   [["sampa cafe","oxxo","hamburger","osnir","mani ","cantina","churrascaria","restaurante","lanchonete","pizza","minuto pa","delta quality","bar ","lanche","cafe "],"Comer fora"],
   [["ifd*","ifood","rappi","zee now","delivery"],"Delivery"],
