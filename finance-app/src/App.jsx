@@ -2188,6 +2188,98 @@ function AnáliseView({month, mesKey, setMonth}) {
   );
 }
 
+function ProjetosView({projects,setProjects,month,setMonth,mesKey}) {
+  const [novo,setNovo]=useState(null);
+  const [selecionado,setSelecionado]=useState(projects[0]?.id||null);
+  const [novoItem,setNovoItem]=useState({nome:"",valor:""});
+
+  const meses={};
+  Object.keys(localStorage).filter(k=>k.startsWith("month:")).forEach(k=>{
+    try { meses[k.slice(6)]=JSON.parse(localStorage.getItem(k)); } catch {}
+  });
+  if(month) meses[mesKey]=month;
+  const gastos=[];
+  Object.entries(meses).sort(([a],[b])=>b.localeCompare(a)).forEach(([mes,md])=>{
+    Object.entries(md?.cartoes||{}).forEach(([cartao,arr])=>(arr||[]).forEach((t,index)=>gastos.push({mes,tipo:"cartao",cartao,index,item:t,nome:t.desc||"Lançamento",valor:valorPessoal(t)})));
+    (md?.variaveis||[]).forEach((t,index)=>gastos.push({mes,tipo:"variavel",index,item:t,nome:t.desc||"Variável",valor:valorPessoal(t)}));
+    (md?.fixas||[]).filter(t=>Number(t.valor)>0).forEach((t,index)=>gastos.push({mes,tipo:"fixa",index,item:t,nome:t.nome||"Fixa",valor:valorPessoal(t)}));
+  });
+
+  useEffect(()=>{
+    if(projects.length&&!projects.some(p=>p.id===selecionado)) setSelecionado(projects[0].id);
+  },[projects,selecionado]);
+
+  const projeto=projects.find(p=>p.id===selecionado);
+  const updateProjeto=(id,changes)=>setProjects(projects.map(p=>p.id===id?{...p,...changes}:p));
+  const addProjeto=()=>{
+    if(!novo?.nome?.trim()) return;
+    const p={id:`projeto-${Date.now()}`,nome:novo.nome.trim(),dataAlvo:novo.dataAlvo||"",valorMeta:Number(novo.valorMeta)||0,valorGuardado:Number(novo.valorGuardado)||0,estrategia:"auto",itens:[]};
+    setProjects([...projects,p]);setSelecionado(p.id);setNovo(null);
+  };
+  const removeProjeto=id=>{setProjects(projects.filter(p=>p.id!==id));setSelecionado(projects.find(p=>p.id!==id)?.id||null);};
+  const addItem=()=>{
+    if(!projeto||!novoItem.nome.trim()||!novoItem.valor) return;
+    updateProjeto(projeto.id,{itens:[...(projeto.itens||[]),{id:Date.now(),nome:novoItem.nome.trim(),valor:Number(novoItem.valor)||0}]});
+    setNovoItem({nome:"",valor:""});
+  };
+  const vincular=(g,projetoId)=>{
+    const md={...meses[g.mes],cartoes:{...(meses[g.mes]?.cartoes||{})},variaveis:[...(meses[g.mes]?.variaveis||[])],fixas:[...(meses[g.mes]?.fixas||[])]};
+    if(g.tipo==="cartao") md.cartoes[g.cartao]=(md.cartoes[g.cartao]||[]).map((x,i)=>i===g.index?{...x,projetoId:projetoId||null}:x);
+    if(g.tipo==="variavel") md.variaveis=md.variaveis.map((x,i)=>i===g.index?{...x,projetoId:projetoId||null}:x);
+    if(g.tipo==="fixa") md.fixas=md.fixas.map((x,i)=>i===g.index?{...x,projetoId:projetoId||null}:x);
+    md.atualizadoEm=new Date().toISOString();
+    localStorage.setItem(`month:${g.mes}`,JSON.stringify(md));
+    if(g.mes===mesKey) setMonth(md); else setMonth(cur=>cur?{...cur}:cur);
+  };
+
+  const resumo=p=>{
+    const ligados=gastos.filter(g=>g.item.projetoId===p.id);
+    const confirmado=ligados.filter(g=>!g.item.projetado).reduce((s,g)=>s+g.valor,0);
+    const previsto=ligados.filter(g=>g.item.projetado).reduce((s,g)=>s+g.valor,0);
+    const itens=(p.itens||[]).reduce((s,i)=>s+Number(i.valor||0),0);
+    const orcamento=Math.max(Number(p.valorMeta)||0,itens,confirmado+previsto);
+    const falta=Math.max(orcamento-confirmado-Number(p.valorGuardado||0),0);
+    const alvo=p.dataAlvo?new Date(`${p.dataAlvo}T12:00:00`):null;
+    const mesesAte=alvo&&alvo>new Date()?Math.max(1,Math.ceil((alvo-new Date())/(1000*60*60*24*30.44))):1;
+    return {ligados,confirmado,previsto,itens,orcamento,falta,mesesAte,mensal:falta/mesesAte};
+  };
+  const recomendacao=(p,r)=>{
+    if(!p.dataAlvo) return "Defina a data-alvo para calcular o valor mensal e comparar formas de pagamento.";
+    if(r.falta<=0) return "Meta coberta. Prefira pagamento à vista se houver desconto, sem comprometer sua reserva de emergência.";
+    if(r.mesesAte<=6) return `Prazo curto: reserve cerca de ${fmtBRL(r.mensal)}/mês em produto de baixo risco e liquidez diária. Parcelar só faz sentido sem juros.`;
+    if(p.estrategia==="parcelado") return "Compare o CET com o rendimento líquido da reserva. Sem juros, mantenha o dinheiro líquido e pague as parcelas dentro do orçamento mensal.";
+    return `Separe aproximadamente ${fmtBRL(r.mensal)}/mês. Para uma meta com data definida, priorize baixo risco; evite renda variável perto do uso do dinheiro.`;
+  };
+
+  return <div style={{display:"flex",flexDirection:"column",gap:10}}>
+    <Card style={{background:"linear-gradient(135deg,rgba(91,88,214,.1),rgba(14,116,144,.06))",borderColor:"rgba(91,88,214,.18)"}}>
+      <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1}}>Planejamento por objetivo</div>
+      <div style={{fontSize:12,color:"#475569",marginTop:5,lineHeight:1.5}}>Monte o orçamento, acompanhe gastos reais e descubra quanto reservar por mês.</div>
+    </Card>
+    <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+      {projects.map(p=><button key={p.id} onClick={()=>setSelecionado(p.id)} style={{whiteSpace:"nowrap",padding:"7px 11px",borderRadius:999,border:`1px solid ${selecionado===p.id?"rgba(91,88,214,.35)":"rgba(15,23,42,.08)"}`,background:selecionado===p.id?"rgba(91,88,214,.1)":"#fff",color:selecionado===p.id?"#5b58d6":"#64748b",fontSize:11,fontWeight:600,cursor:"pointer"}}>{p.nome}</button>)}
+      <button onClick={()=>setNovo({nome:"",dataAlvo:"",valorMeta:"",valorGuardado:""})} style={{padding:"7px 11px",borderRadius:999,border:"1px dashed rgba(91,88,214,.35)",background:"transparent",color:"#5b58d6",fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>+ Projeto</button>
+    </div>
+    {novo&&<Card style={{borderColor:"rgba(91,88,214,.25)"}}>
+      <Inp label="Nome do projeto" value={novo.nome} onChange={v=>setNovo({...novo,nome:v})} placeholder="Ex: Rock The Mountain"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}><Inp label="Data-alvo" type="date" value={novo.dataAlvo} onChange={v=>setNovo({...novo,dataAlvo:v})}/><Inp label="Orçamento inicial" type="number" value={novo.valorMeta} onChange={v=>setNovo({...novo,valorMeta:v})} placeholder="Opcional"/></div>
+      <div style={{marginTop:8}}><Inp label="Já reservado" type="number" value={novo.valorGuardado} onChange={v=>setNovo({...novo,valorGuardado:v})} placeholder="0,00"/></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}><Btn outline color="#64748b" onClick={()=>setNovo(null)}>Cancelar</Btn><Btn onClick={addProjeto}>Criar projeto</Btn></div>
+    </Card>}
+    {!projeto&&!novo&&<Card><div style={{textAlign:"center",padding:18,color:"#7c8799",fontSize:12}}>Crie seu primeiro projeto para começar o planejamento.</div></Card>}
+    {projeto&&(()=>{const r=resumo(projeto);return <>
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start"}}><div style={{flex:1}}><input value={projeto.nome} onChange={e=>updateProjeto(projeto.id,{nome:e.target.value})} style={{width:"100%",border:"none",background:"transparent",fontSize:18,fontWeight:700,color:"#172033",outline:"none"}}/><div style={{fontSize:10,color:"#7c8799",marginTop:2}}>{projeto.dataAlvo?`Objetivo em ${new Date(`${projeto.dataAlvo}T12:00:00`).toLocaleDateString("pt-BR")}`:"Sem data definida"}</div></div><button onClick={()=>removeProjeto(projeto.id)} style={{border:"none",background:"rgba(239,68,68,.07)",color:"#dc2626",borderRadius:7,padding:"4px 7px",cursor:"pointer"}}>✕</button></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:12}}><Inp label="Data-alvo" type="date" value={projeto.dataAlvo||""} onChange={v=>updateProjeto(projeto.id,{dataAlvo:v})}/><Inp label="Meta total (R$)" type="number" value={projeto.valorMeta||""} onChange={v=>updateProjeto(projeto.id,{valorMeta:Number(v)||0})} placeholder="Calculada pelos itens"/><Inp label="Valor já reservado" type="number" value={projeto.valorGuardado||""} onChange={v=>updateProjeto(projeto.id,{valorGuardado:Number(v)||0})}/><Sel label="Estratégia" value={projeto.estrategia||"auto"} onChange={v=>updateProjeto(projeto.id,{estrategia:v})} options={[{value:"auto",label:"Recomendada"},{value:"vista",label:"Juntar e pagar à vista"},{value:"parcelado",label:"Parcelar sem juros"},{value:"reserva",label:"Guardar com liquidez"}]}/></div>
+      </Card>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{[["Orçamento",r.orcamento,"#5b58d6"],["Gasto confirmado",r.confirmado,"#dc2626"],["Já projetado",r.previsto,"#b45309"],["Guardar por mês",r.mensal,"#15803d"]].map(([l,v,c])=><Card key={l} style={{padding:12}}><div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase"}}>{l}</div><div className="mono" style={{fontSize:16,color:c,fontWeight:700,marginTop:3}}>{fmtBRL(v)}</div></Card>)}</div>
+      <Card style={{borderColor:"rgba(21,128,61,.18)",background:"rgba(21,128,61,.035)"}}><div style={{fontSize:10,color:"#15803d",fontWeight:700,textTransform:"uppercase",letterSpacing:.7}}>Estratégia sugerida</div><div style={{fontSize:12,color:"#475569",lineHeight:1.55,marginTop:6}}>{recomendacao(projeto,r)}</div></Card>
+      <Card><div style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:9}}>Itens planejados</div>{(projeto.itens||[]).map(i=><div key={i.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(15,23,42,.04)"}}><span style={{fontSize:12,color:"#475569"}}>{i.nome}</span><div style={{display:"flex",gap:7,alignItems:"center"}}><span className="mono" style={{fontSize:11}}>{fmtBRL(i.valor)}</span><button onClick={()=>updateProjeto(projeto.id,{itens:projeto.itens.filter(x=>x.id!==i.id)})} style={{border:"none",background:"transparent",color:"#dc2626",cursor:"pointer"}}>✕</button></div></div>)}<div style={{display:"grid",gridTemplateColumns:"2fr 1fr auto",gap:6,marginTop:9}}><input value={novoItem.nome} onChange={e=>setNovoItem({...novoItem,nome:e.target.value})} placeholder="Passagem, hospedagem..." style={{minWidth:0,border:"1px solid rgba(15,23,42,.1)",borderRadius:8,padding:"7px 8px",fontSize:11}}/><input type="number" value={novoItem.valor} onChange={e=>setNovoItem({...novoItem,valor:e.target.value})} placeholder="R$" style={{minWidth:0,border:"1px solid rgba(15,23,42,.1)",borderRadius:8,padding:"7px 8px",fontSize:11}}/><button onClick={addItem} style={{border:"none",borderRadius:8,background:"#5b58d6",color:"#fff",padding:"0 10px",cursor:"pointer"}}>+</button></div></Card>
+      <Card><div style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:3}}>Agrupar gastos lançados</div><div style={{fontSize:10,color:"#7c8799",marginBottom:9}}>Escolha o projeto ao lado de qualquer despesa, em qualquer mês salvo.</div><div style={{maxHeight:330,overflowY:"auto"}}>{gastos.map((g,i)=><div key={`${g.mes}-${g.tipo}-${g.cartao||""}-${g.index}-${i}`} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(15,23,42,.04)"}}><div style={{minWidth:0}}><div style={{fontSize:11,color:"#334155",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.nome}</div><div style={{fontSize:9,color:"#94a3b8"}}>{mesLabel(g.mes)} · {fmtBRL(g.valor)}{g.item.projetado?" · previsto":""}</div></div><select value={g.item.projetoId||""} onChange={e=>vincular(g,e.target.value)} style={{maxWidth:125,border:"1px solid rgba(15,23,42,.1)",borderRadius:7,padding:"4px 5px",fontSize:9,color:g.item.projetoId?"#5b58d6":"#7c8799",background:"#fff"}}><option value="">Sem projeto</option>{projects.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}</select></div>)}</div></Card>
+    </>})()}
+  </div>;
+}
+
 function ConfigView({cats,setCats,locaisConfig,setLocaisConfig,fixasConfig,setFixasConfig,receitasFixasConfig,setReceitasFixasConfig}) {
   const [nova,setNova]=useState("");
   const [editIdx,setEditIdx]=useState(null);
@@ -2341,6 +2433,7 @@ const NAV_GROUPS=[
   {id:"inicio",label:"Visão geral",shortLabel:"Início",defaultView:"dashboard",items:[{id:"dashboard",label:"Início"}]},
   {id:"receita",label:"Receita",shortLabel:"Receita",defaultView:"plantoes",items:[{id:"plantoes",label:"Plantões e receitas"}]},
   {id:"gastos",label:"Gastos",shortLabel:"Gastos",defaultView:"cartoes",items:[{id:"fixas",label:"Fixas"},{id:"cartoes",label:"Cartões"},{id:"variaveis",label:"Variáveis"}]},
+  {id:"planejamento",label:"Planejamento",shortLabel:"Projetos",defaultView:"projetos",items:[{id:"projetos",label:"Projetos"}]},
   {id:"analises",label:"Análise",shortLabel:"Análise",defaultView:"analise",items:[{id:"investimentos",label:"Investimentos"},{id:"analise",label:"Análises"}]},
   {id:"sistema",label:"Ajustes",shortLabel:"Config",defaultView:"config",items:[{id:"config",label:"Configurações"}]},
 ];
@@ -2356,6 +2449,7 @@ export default function App() {
   const [locaisConfig,setLocaisConfigState]=useState(LOCAIS_DEFAULT_CONFIG);
   const [fixasConfig,setFixasConfigState]=useState(FIXAS_DEFAULT_CONFIG);
   const [receitasFixasConfig,setReceitasFixasConfigState]=useState(RECEITAS_FIXAS_DEFAULT_CONFIG);
+  const [projects,setProjectsState]=useState([]);
   const [configReady,setConfigReady]=useState(false);
   const [configVersion,setConfigVersion]=useState(0);
   const autoAgendaRunning=useRef(false);
@@ -2373,6 +2467,7 @@ export default function App() {
   };
 
   const setCats=(newCats)=>{ CATS=newCats; setCatsState(newCats); save("config:cats",newCats); setConfigVersion(v=>v+1); };
+  const setProjects=(newProjects)=>{ setProjectsState(newProjects); save("config:projetos",newProjects); setConfigVersion(v=>v+1); };
   const setLocaisConfig=(newConfig)=>{
     LOCAIS_CONFIG=newConfig;
     setLocaisConfigState(newConfig);
@@ -2441,7 +2536,7 @@ export default function App() {
           }
         }
       }catch{}
-      const [catsSaved,agendaSaved,locaisLegado,fixasSaved,receitasSaved]=await Promise.all([load("config:cats"),load("config:agenda-locais"),load("config:locais"),load("config:fixas"),load("config:receitas-fixas")]);
+      const [catsSaved,agendaSaved,locaisLegado,fixasSaved,receitasSaved,projetosSaved]=await Promise.all([load("config:cats"),load("config:agenda-locais"),load("config:locais"),load("config:fixas"),load("config:receitas-fixas"),load("config:projetos")]);
       if(Array.isArray(catsSaved)&&catsSaved.length){CATS=catsSaved;setCatsState(catsSaved);}
       let agenda=agendaSaved;
       if(!Array.isArray(agenda)||!agenda.length) agenda=Array.isArray(locaisLegado)&&locaisLegado.length?locaisLegado.map(nome=>makeLocalConfig(nome)):LOCAIS_DEFAULT_CONFIG;
@@ -2452,6 +2547,7 @@ export default function App() {
         FIXAS_CONFIG=fixasNormalizadas;setFixasConfigState(fixasNormalizadas);save("config:fixas",fixasNormalizadas);
       }
       if(Array.isArray(receitasSaved)){RECEITAS_FIXAS_CONFIG=receitasSaved;setReceitasFixasConfigState(receitasSaved);}
+      if(Array.isArray(projetosSaved)) setProjectsState(projetosSaved);
       setGdriveStatus("idle");
       setConfigReady(true);
     })();
@@ -2722,6 +2818,7 @@ export default function App() {
       if(Array.isArray(remoteData["config:agenda-locais"])) { LOCAIS_CONFIG=remoteData["config:agenda-locais"]; setLocaisConfigState(LOCAIS_CONFIG); }
       if(Array.isArray(remoteData["config:fixas"])) { FIXAS_CONFIG=normalizarFixas(remoteData["config:fixas"]); setFixasConfigState(FIXAS_CONFIG); save("config:fixas",FIXAS_CONFIG); }
       if(Array.isArray(remoteData["config:receitas-fixas"])) { RECEITAS_FIXAS_CONFIG=remoteData["config:receitas-fixas"]; setReceitasFixasConfigState(RECEITAS_FIXAS_CONFIG); }
+      if(Array.isArray(remoteData["config:projetos"])) setProjectsState(remoteData["config:projetos"]);
       // Recarrega mês atual
       const cur = localStorage.getItem(storageKey);
       if(cur) {
@@ -2826,6 +2923,7 @@ export default function App() {
             :view==="fixas"?<FixasView month={month} setMonth={setMonthRaw} setFixasConfig={setFixasConfig}/>
             :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw} mesKey={mesKey} importCardEntries={importCardEntries} projectMonthInstallments={projectMonthInstallments}/>
             :view==="variaveis"?<PixView month={month} setMonth={setMonthRaw}/>
+            :view==="projetos"?<ProjetosView projects={projects} setProjects={setProjects} month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="investimentos"?<InvestView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="analise"?<AnáliseView month={month} mesKey={mesKey} setMonth={setMonthRaw}/>
             :view==="config"?<ConfigView cats={cats} setCats={setCats} locaisConfig={locaisConfig} setLocaisConfig={setLocaisConfig} fixasConfig={fixasConfig} setFixasConfig={setFixasConfig} receitasFixasConfig={receitasFixasConfig} setReceitasFixasConfig={setReceitasFixasConfig}/>
