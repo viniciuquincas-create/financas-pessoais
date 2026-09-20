@@ -165,8 +165,11 @@ const normalizeInvestimentos = arr => (arr||[])
     resgate:Number(i.resgate)||0,
   }));
 
-const hasFotoInvestimentos = d => d?.investimentosFotoConfirmada===true
-  || (d?.investimentos||[]).some(i=>Number(i.atual)>0);
+const hasFotoInvestimentos = d => {
+  if(typeof d?.investimentosFotoConfirmada==="boolean") return d.investimentosFotoConfirmada;
+  // Compatibilidade com registros antigos, anteriores ao campo de confirmação.
+  return (d?.investimentos||[]).some(i=>Number(i.atual)>0);
+};
 
 const mergePlantoesConfig = plantoes => {
   const base=(plantoes||[]).map(p=>{
@@ -2568,7 +2571,7 @@ export default function App() {
         try{
           const prev=await load(`month:${prevMesKey(requestedKey)}`);
           if(cancelled||requestId!==monthLoadRequest.current) return;
-          if(prev?.investimentos?.length) seed.investimentos=normalizeInvestimentos(prev.investimentos).map(i=>({...i,aporte:0,resgate:0}));
+          if(prev?.investimentos?.length) seed.investimentos=normalizeInvestimentos(prev.investimentos).map(i=>({...i,atual:0,aporte:0,resgate:0}));
         }catch{}
         if(cancelled||requestId!==monthLoadRequest.current) return;
         hydratingMonth.current=true;
