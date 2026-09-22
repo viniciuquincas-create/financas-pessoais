@@ -891,6 +891,8 @@ function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthIn
   const [pdfProcessing,setPdfProcessing]=useState(false);
   const [pdfMsg,setPdfMsg]=useState("");
   const [pdfPreview,setPdfPreview]=useState([]);
+  const [editingEntry,setEditingEntry]=useState(null);
+  const [editEntry,setEditEntry]=useState(null);
   const pdfInputRef=useRef();
 
   // Limpa erros ao montar o componente
@@ -909,6 +911,7 @@ function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthIn
   };
 
   const RULES_CAT = [
+    [["totalpass","total pass"],"Lazer"],
     [["vida xp *vida xp","vida xp*vida xp"],"Seguro"],
     [["airbnb pagam*airb"],"Viagem"],
     [["sympla*sympla 2u"],"Lazer"],
@@ -919,7 +922,7 @@ function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthIn
     [["ifd*osnir hamburger ltda"],"Delivery"],
     [["market4u","carrefour","assai","padaria","panificadora","piriquito","hortifruti","atacadao","pao de acucar","supermercado","minuto pa"],"Mercado"],
     [["sampa cafe","oxxo","hamburger","osnir","mani ","cantina","churrascaria","restaurante","lanchonete","pizza","delta quality","cafe ","lanche"],"Comer fora"],
-    [["ifd*","ifood","rappi","zee now","delivery"],"Delivery"],
+    [["ifd*","ifood","99food","99 food","rappi","zee now","delivery"],"Delivery"],
     [["paypal *uber","uber br","uber do brasi","uber ","99app"],"Uber"],
     [["sem parar","estacionamento","blz estacion","posto ","auto posto","shellbox","intertag","combustivel"],"Carro"],
     [["applecombill","netflix","amazon kindle","google one","youtube","disney","mubi","openai","timeleft","granazen","viki","paypal *google","paypal *disney","spotify","conta vivo","vivo ","deezer","apple "],"Apps"],
@@ -996,6 +999,16 @@ Retorne SOMENTE o array JSON.`;
     setShowForm(false);
   };
   const remove=id=>setMonth({...month,cartoes:{...month.cartoes,[activeCard]:items.filter(t=>t.id!==id)}});
+  const startEditingEntry=(t,index)=>{
+    setEditingEntry(`${activeCard}:${index}`);
+    setEditEntry({...t,valor:String(t.valor??"")});
+  };
+  const saveEditingEntry=index=>{
+    if(!editEntry?.desc?.trim()||editEntry.valor==="") return;
+    const updated=items.map((item,i)=>i===index?{...item,...editEntry,desc:editEntry.desc.trim(),valor:Number(editEntry.valor)||0}:item);
+    setMonth({...month,cartoes:{...month.cartoes,[activeCard]:updated}});
+    setEditingEntry(null); setEditEntry(null);
+  };
   const doImport=()=>{
     try{
       const data=JSON.parse(importJson);
@@ -1151,8 +1164,25 @@ Retorne SOMENTE o array JSON.`;
         </div>
       )}
 
-      {items.map(t=>(
+      {items.map((t,index)=>(
         <Card key={t.id} style={{padding:"10px 14px"}}>
+          {editingEntry===`${activeCard}:${index}`?(
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <Inp label="Descrição" value={editEntry.desc||""} onChange={v=>setEditEntry({...editEntry,desc:v})}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <Sel label="Categoria" value={editEntry.cat||"Outro"} onChange={v=>setEditEntry({...editEntry,cat:v})} options={CATS}/>
+                <Inp label="Parcela" value={editEntry.parcela||""} onChange={v=>setEditEntry({...editEntry,parcela:v})}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <Inp label="Data" value={editEntry.data||""} onChange={v=>setEditEntry({...editEntry,data:v})}/>
+                <Inp label="Valor (R$)" type="number" value={editEntry.valor} onChange={v=>setEditEntry({...editEntry,valor:v})}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <Btn outline color="#64748b" onClick={()=>{setEditingEntry(null);setEditEntry(null);}}>Cancelar</Btn>
+                <Btn color={card.color} onClick={()=>saveEditingEntry(index)}>Salvar alterações</Btn>
+              </div>
+            </div>
+          ):(<>
           {/* Linha 1: descrição + valor + remover */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
             <div style={{flex:1,minWidth:0}}>
@@ -1169,6 +1199,7 @@ Retorne SOMENTE o array JSON.`;
             </div>
             <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
               <span className="mono" style={{fontSize:14,color:card.color,fontWeight:600}}>{fmtBRL(t.valor)}</span>
+              <button onClick={()=>startEditingEntry(t,index)} aria-label={`Editar ${t.desc}`} style={{background:`${card.color}0d`,border:`1px solid ${card.color}26`,borderRadius:6,padding:"3px 7px",color:card.color,fontSize:11,cursor:"pointer"}}>✎</button>
               <button onClick={()=>remove(t.id)} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.15)",borderRadius:6,padding:"3px 7px",color:"#dc2626",fontSize:11,cursor:"pointer"}}>✕</button>
             </div>
           </div>
@@ -1185,6 +1216,7 @@ Retorne SOMENTE o array JSON.`;
               {CATS.map(cat=><option key={cat} value={cat}>{cat}</option>)}
             </select>
           </div>
+          </>)}
         </Card>
       ))}
       {showForm&&(
@@ -1215,6 +1247,8 @@ Retorne SOMENTE o array JSON.`;
 function PixView({month,setMonth}) {
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({desc:"",cat:CATS[0],data:today(),banco:"Inter",valor:""});
+  const [editingEntry,setEditingEntry]=useState(null);
+  const [editEntry,setEditEntry]=useState(null);
   const total=(month.variaveis||[]).reduce((s,p)=>s+valorPessoal(p),0);
   const onPdfSelect=e=>{
     const f=e.target.files?.[0];
@@ -1222,6 +1256,7 @@ function PixView({month,setMonth}) {
   };
 
   const RULES_CAT = [
+    [["totalpass","total pass"],"Lazer"],
     [["vida xp *vida xp","vida xp*vida xp"],"Seguro"],
     [["airbnb pagam*airb"],"Viagem"],
     [["sympla*sympla 2u"],"Lazer"],
@@ -1232,7 +1267,7 @@ function PixView({month,setMonth}) {
     [["ifd*osnir hamburger ltda"],"Delivery"],
     [["market4u","carrefour","assai","padaria","panificadora","piriquito","hortifruti","atacadao","pao de acucar","supermercado","minuto pa"],"Mercado"],
     [["sampa cafe","oxxo","hamburger","osnir","mani ","cantina","churrascaria","restaurante","lanchonete","pizza","delta quality","cafe ","lanche"],"Comer fora"],
-    [["ifd*","ifood","rappi","zee now","delivery"],"Delivery"],
+    [["ifd*","ifood","99food","99 food","rappi","zee now","delivery"],"Delivery"],
     [["paypal *uber","uber br","uber do brasi","uber ","99app"],"Uber"],
     [["sem parar","estacionamento","blz estacion","posto ","auto posto","shellbox","intertag","combustivel"],"Carro"],
     [["applecombill","netflix","amazon kindle","google one","youtube","disney","mubi","openai","timeleft","granazen","viki","paypal *google","paypal *disney","spotify","conta vivo","vivo ","deezer","apple "],"Apps"],
@@ -1309,14 +1344,38 @@ Retorne SOMENTE o array JSON.`;
     setForm({desc:"",cat:CATS[0],data:today(),banco:"Inter",valor:""});
     setShowForm(false);
   };
+  const startEditingEntry=(p,index)=>{setEditingEntry(index);setEditEntry({...p,valor:String(p.valor??"")});};
+  const saveEditingEntry=index=>{
+    if(!editEntry?.desc?.trim()||editEntry.valor==="") return;
+    const updated=(month.variaveis||[]).map((item,i)=>i===index?{...item,...editEntry,desc:editEntry.desc.trim(),valor:Number(editEntry.valor)||0}:item);
+    setMonth({...month,variaveis:updated});
+    setEditingEntry(null); setEditEntry(null);
+  };
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <Card style={{background:"rgba(34,211,238,.05)",borderColor:"rgba(34,211,238,.15)"}}>
         <div style={{fontSize:10,color:"#64748b"}}>Total Pix / Variáveis</div>
         <div className="mono" style={{fontSize:24,color:"#0e7490",fontWeight:600}}>{fmtBRL(total)}</div>
       </Card>
-      {(month.variaveis||[]).map(p=>(
+      {(month.variaveis||[]).map((p,index)=>(
         <Card key={p.id} style={{padding:"10px 14px"}}>
+          {editingEntry===index?(
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <Inp label="Descrição" value={editEntry.desc||""} onChange={v=>setEditEntry({...editEntry,desc:v})}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <Sel label="Categoria" value={editEntry.cat||"Outro"} onChange={v=>setEditEntry({...editEntry,cat:v})} options={CATS}/>
+                <Sel label="Banco" value={editEntry.banco||"Outro"} onChange={v=>setEditEntry({...editEntry,banco:v})} options={["Inter","Itaú","Will","XP","Outro"]}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <Inp label="Data" type="date" value={editEntry.data||""} onChange={v=>setEditEntry({...editEntry,data:v})}/>
+                <Inp label="Valor (R$)" type="number" value={editEntry.valor} onChange={v=>setEditEntry({...editEntry,valor:v})}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <Btn outline color="#64748b" onClick={()=>{setEditingEntry(null);setEditEntry(null);}}>Cancelar</Btn>
+                <Btn color="#0e7490" onClick={()=>saveEditingEntry(index)}>Salvar alterações</Btn>
+              </div>
+            </div>
+          ):(
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,color:"#172033"}}>{p.desc}</div>
@@ -1328,9 +1387,11 @@ Retorne SOMENTE o array JSON.`;
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:8,flexShrink:0}}>
               <span className="mono" style={{fontSize:14,color:"#0e7490",fontWeight:500}}>{fmtBRL(p.valor)}</span>
+              <button onClick={()=>startEditingEntry(p,index)} aria-label={`Editar ${p.desc}`} style={{background:"rgba(14,116,144,.07)",border:"1px solid rgba(14,116,144,.18)",borderRadius:6,padding:"3px 7px",color:"#0e7490",fontSize:11,cursor:"pointer"}}>✎</button>
               <button onClick={()=>setMonth({...month,variaveis:(month.variaveis||[]).filter(x=>x.id!==p.id)})} style={{background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.15)",borderRadius:6,padding:"3px 7px",color:"#dc2626",fontSize:11,cursor:"pointer"}}>✕</button>
             </div>
           </div>
+          )}
         </Card>
       ))}
       {showForm&&(

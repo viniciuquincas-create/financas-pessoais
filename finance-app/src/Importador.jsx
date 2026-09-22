@@ -85,6 +85,7 @@ Retorne SOMENTE o array JSON.`;
 }
 
 const RULES = [
+  [["totalpass","total pass"],"Lazer"],
   [["vida xp *vida xp","vida xp*vida xp"],"Seguro"],
   [["airbnb pagam*airb"],"Viagem"],
   [["sympla*sympla 2u"],"Lazer"],
@@ -95,7 +96,7 @@ const RULES = [
   [["ifd*osnir hamburger ltda"],"Delivery"],
   [["market4u","carrefour","assai","padaria","panificadora","piriquito","hortifruti","atacadao","pao de acucar","supermercado"],"Mercado"],
   [["sampa cafe","oxxo","hamburger","osnir","mani ","cantina","churrascaria","restaurante","lanchonete","pizza","minuto pa","delta quality","bar ","lanche","cafe "],"Comer fora"],
-  [["ifd*","ifood","rappi","zee now","delivery"],"Delivery"],
+  [["ifd*","ifood","99food","99 food","rappi","zee now","delivery"],"Delivery"],
   [["paypal *uber","uber br","uber do brasi","uber ","99app"],"Uber"],
   [["sem parar","estacionamento","blz estacion","posto ","auto posto","shellbox","intertag","combustivel"],"Carro"],
   [["applecombill","netflix","amazon kindle","google one","youtube","disney","mubi","openai","timeleft","granazen","viki","paypal *google","paypal *disney","spotify","conta vivo","vivo ","deezer","apple "],"Apps"],
