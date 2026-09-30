@@ -80,10 +80,14 @@ const makeLocalConfig = (nome, extra={}) => ({
   inicioMes:Number.isFinite(Number(extra.inicioMes))?Number(extra.inicioMes):0,
   fimDia:Number(extra.fimDia)||31,
   fimMes:Number.isFinite(Number(extra.fimMes))?Number(extra.fimMes):0,
+  desdeMes:extra.desdeMes||"",
+  ateMes:extra.ateMes||"",
+  empresa:extra.empresa||"",
   ativo:extra.ativo!==false,
 });
 const LOCAIS_DEFAULT_CONFIG = [
-  makeLocalConfig("Leonor",{id:"leonor",diaReceb:15,inicioMes:-2,fimMes:-2}),
+  makeLocalConfig("Leonor",{id:"leonor",empresa:"Empresa anterior",diaReceb:15,inicioMes:-2,fimMes:-2,ateMes:"2026-11"}),
+  makeLocalConfig("Leonor · nova empresa",{id:"leonor-nova",empresa:"Nova empresa",busca:"Leonor",diaReceb:20,inicioMes:-1,fimMes:-1,desdeMes:"2026-11"}),
   makeLocalConfig("CDT",{id:"cdt"}),
   makeLocalConfig("SEPACO",{id:"sepaco"}),
 ];
@@ -123,9 +127,13 @@ const sameCardEntry = (a,b) => descKey(a.desc)===descKey(b.desc)
 const load = async (key,fb=null) => { try{ const r=await window.storage.get(key); return r?JSON.parse(r.value):fb; }catch{ return fb; }};
 const save = async (key,val)     => { try{ await window.storage.set(key,JSON.stringify(val)); }catch{} };
 
+const localAtivoNoMes = (local,key) => local.ativo!==false
+  && (!key||!local.desdeMes||key>=local.desdeMes)
+  && (!key||!local.ateMes||key<=local.ateMes);
+
 const seedMonth = key => ({
   key,
-  plantoes: LOCAIS_CONFIG.filter(l=>l.ativo!==false).map(l=>({
+  plantoes: LOCAIS_CONFIG.filter(l=>localAtivoNoMes(l,key)).map(l=>({
     local:l.nome, n:0, horas:0, valorH:l.valorH, fromAgenda:false, ativo:true,
     diaReceb:l.diaReceb,
     statusReceb:"aguardando",
@@ -171,22 +179,25 @@ const hasFotoInvestimentos = d => {
   return (d?.investimentos||[]).some(i=>Number(i.atual)>0);
 };
 
-const mergePlantoesConfig = plantoes => {
-  const base=(plantoes||[]).map(p=>{
+const mergePlantoesConfig = (plantoes,monthKey) => {
+  const base=(plantoes||[]).filter(p=>{
+    const cfg=LOCAIS_CONFIG.find(l=>l.nome===p.local);
+    return !cfg||localAtivoNoMes(cfg,monthKey);
+  }).map(p=>{
     const cfg=LOCAIS_CONFIG.find(l=>l.nome===p.local);
     return {ativo:true,diaReceb:cfg?.diaReceb||0,statusReceb:"aguardando",valorH:cfg?.valorH||0,...p};
   });
   const existentes=new Set(base.map(p=>p.local));
-  const faltantes=LOCAIS_CONFIG.filter(l=>l.ativo!==false&&!existentes.has(l.nome)).map(l=>({local:l.nome,n:0,horas:0,valorH:l.valorH,fromAgenda:false,ativo:true,diaReceb:l.diaReceb,statusReceb:"aguardando"}));
+  const faltantes=LOCAIS_CONFIG.filter(l=>localAtivoNoMes(l,monthKey)&&!existentes.has(l.nome)).map(l=>({local:l.nome,n:0,horas:0,valorH:l.valorH,fromAgenda:false,ativo:true,diaReceb:l.diaReceb,statusReceb:"aguardando"}));
   return [...base,...faltantes];
 };
 
-const agendaRequestConfig = locaisConfig => locaisConfig
-  .filter(l=>l.ativo!==false)
+const agendaRequestConfig = (locaisConfig,monthKey) => locaisConfig
+  .filter(l=>localAtivoNoMes(l,monthKey))
   .map(({nome,busca,inicioDia,inicioMes,fimDia,fimMes})=>({nome,busca,inicioDia,inicioMes,fimDia,fimMes}));
 
 const syncAgendaMonth = async (monthData, monthKey, locaisConfig) => {
-  const config=agendaRequestConfig(locaisConfig);
+  const config=agendaRequestConfig(locaisConfig,monthKey);
   if(!config.length) return {month:monthData,data:{plantoes:{},periodos:{}}};
   const res=await fetch(`/api/agenda?mes=${monthKey}&config=${encodeURIComponent(JSON.stringify(config))}`);
   if(!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -194,7 +205,7 @@ const syncAgendaMonth = async (monthData, monthKey, locaisConfig) => {
   if(data.error) throw new Error(data.error);
   const plantoesApi=data.plantoes||{};
   if(!Object.keys(plantoesApi).length) throw new Error("Nenhum plantão encontrado");
-  const atuais=mergePlantoesConfig(monthData.plantoes||[]);
+  const atuais=mergePlantoesConfig(monthData.plantoes||[],monthKey);
   const updated=atuais.map(p=>{
     const d=plantoesApi[p.local];
     if(!d||p.bloqueadoSync) return p;
@@ -2472,6 +2483,11 @@ function ConfigView({cats,setCats,locaisConfig,setLocaisConfig,fixasConfig,setFi
                 <Inp label="Valor/h (R$)" type="number" value={l.valorH||""} onChange={v=>updateLocal(l.id,"valorH",v)} placeholder="0"/>
                 <Inp label="Dia receb." type="number" value={l.diaReceb||""} onChange={v=>updateLocal(l.id,"diaReceb",v)} placeholder="0"/>
               </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
+                <Inp label="Válido desde" type="month" value={l.desdeMes||""} onChange={v=>updateLocal(l.id,"desdeMes",v)}/>
+                <Inp label="Válido até" type="month" value={l.ateMes||""} onChange={v=>updateLocal(l.id,"ateMes",v)}/>
+              </div>
+              {l.empresa&&<div style={{fontSize:9,color:"#7c8799",marginTop:6}}>{l.empresa}</div>}
               <div style={{fontSize:10,color:"#64748b",margin:"10px 0 6px"}}>Competência do recebimento</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}><Inp label="Início · dia" type="number" value={l.inicioDia} onChange={v=>updateLocal(l.id,"inicioDia",v)}/><Inp label="Mês" type="number" value={l.inicioMes} onChange={v=>updateLocal(l.id,"inicioMes",v)}/></div>
@@ -2540,7 +2556,7 @@ export default function App() {
     setMonthRaw(cur=>{
       if(!cur) return cur;
       const existentes=new Set((cur.plantoes||[]).map(p=>p.local));
-      const faltantes=newConfig.filter(l=>l.ativo!==false&&!existentes.has(l.nome)).map(l=>({local:l.nome,n:0,horas:0,valorH:l.valorH,fromAgenda:false,ativo:true,diaReceb:l.diaReceb,statusReceb:"aguardando"}));
+      const faltantes=newConfig.filter(l=>localAtivoNoMes(l,cur.key)&&!existentes.has(l.nome)).map(l=>({local:l.nome,n:0,horas:0,valorH:l.valorH,fromAgenda:false,ativo:true,diaReceb:l.diaReceb,statusReceb:"aguardando"}));
       return faltantes.length?{...cur,plantoes:[...(cur.plantoes||[]),...faltantes]}:cur;
     });
   };
@@ -2646,7 +2662,7 @@ export default function App() {
         ...d,
         variaveis: d.variaveis||d.pix||[],
         cartoes: d.cartoes||seed.cartoes,
-        plantoes:mergePlantoesConfig(d.plantoes||seed.plantoes),
+        plantoes:mergePlantoesConfig(d.plantoes||seed.plantoes,requestedKey),
         bolsaDia: d.bolsaDia||5,
         bolsaStatus: d.bolsaStatus||"aguardando",
         auxilioDia: d.auxilioDia||5,
@@ -2682,10 +2698,10 @@ export default function App() {
         const targets=mesKey===base
           ?Array.from({length:6},(_,i)=>addMonthsKey(base,i))
           :[mesKey];
-        const configFingerprint=JSON.stringify(agendaRequestConfig(locaisConfig));
         let selectedUpdate=null;
         for(const key of targets){
           if(cancelled) break;
+          const configFingerprint=JSON.stringify(agendaRequestConfig(locaisConfig,key));
           let source;
           if(key===mesKey) source=month;
           else {
@@ -2770,7 +2786,7 @@ export default function App() {
       ...seed, ...d,
       variaveis: d.variaveis||d.pix||[],
       cartoes: d.cartoes||seed.cartoes,
-      plantoes:mergePlantoesConfig(d.plantoes||seed.plantoes),
+      plantoes:mergePlantoesConfig(d.plantoes||seed.plantoes,key),
       bolsaDia:d.bolsaDia||5, bolsaStatus:d.bolsaStatus||"aguardando",
       auxilioDia:d.auxilioDia||5, auxilioStatus:d.auxilioStatus||"aguardando",
       fixas:normalizarFixas(d.fixas||seed.fixas), receitasFixas:Array.isArray(d.receitasFixas)?d.receitasFixas:seed.receitasFixas, investimentos:normalizeInvestimentos(d.investimentos||seed.investimentos),
