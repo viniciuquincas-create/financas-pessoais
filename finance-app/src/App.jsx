@@ -179,6 +179,34 @@ const hasFotoInvestimentos = d => {
   return (d?.investimentos||[]).some(i=>Number(i.atual)>0);
 };
 
+const transactionalCount = d => Object.values(d?.cartoes||{}).flat().length+(d?.variaveis||[]).length;
+const transactionalSignature = d => JSON.stringify({cartoes:d?.cartoes||{},variaveis:d?.variaveis||[]});
+const projectNextMonthCards = (previous,targetKey) => Object.fromEntries(CARDS.map(card=>{
+  const projected=(previous?.cartoes?.[card.id]||[]).flatMap((entry,index)=>{
+    const parcela=parseParcela(entry.parcela);
+    if(!parcela||parcela.atual>=parcela.total) return [];
+    const next=parcela.atual+1;
+    const parcelamentoId=entry.parcelamentoId||`${card.id}:${descKey(entry.desc)}:${Number(entry.valor||0).toFixed(2)}:recuperado`;
+    return [{...entry,id:`${parcelamentoId}:${next}:${targetKey}:${index}`,parcela:`${next}/${parcela.total}`,parcelamentoId,projetado:true,conciliado:false,origemMes:previous.key||prevMesKey(targetKey)}];
+  });
+  return [card.id,projected];
+}));
+const repairCopiedMonth = (candidate,previous,targetKey) => {
+  const copied=!!candidate&&!!previous
+    && transactionalCount(candidate)>=20
+    && transactionalSignature(candidate)===transactionalSignature(previous);
+  if(!copied) return candidate;
+  const clean=seedMonth(targetKey);
+  return {
+    ...clean,
+    cartoes:projectNextMonthCards(previous,targetKey),
+    investimentos:normalizeInvestimentos(previous.investimentos||[]).map(i=>({...i,atual:0,aporte:0,resgate:0})),
+    investimentosFotoConfirmada:false,
+    copiaCorrigidaDe:previous.key||prevMesKey(targetKey),
+    atualizadoEm:new Date().toISOString(),
+  };
+};
+
 const mergePlantoesConfig = (plantoes,monthKey) => {
   const base=(plantoes||[]).filter(p=>{
     const cfg=LOCAIS_CONFIG.find(l=>l.nome===p.local);
@@ -2639,8 +2667,17 @@ export default function App() {
     const requestId=++monthLoadRequest.current;
     let cancelled=false;
     setMonthRaw(null);
-    load(`month:${requestedKey}`).then(async d=>{
+    load(`month:${requestedKey}`).then(async saved=>{
       if(cancelled||requestId!==monthLoadRequest.current) return;
+      let d=saved;
+      let repairedCopy=false;
+      if(d){
+        const previous=await load(`month:${prevMesKey(requestedKey)}`);
+        if(cancelled||requestId!==monthLoadRequest.current) return;
+        const repaired=repairCopiedMonth(d,previous,requestedKey);
+        repairedCopy=repaired!==d;
+        d=repaired;
+      }
       if(!d){
         const seed=seedMonth(requestedKey);
         // Continuidade: herda os nomes dos ativos, mas a fotografia do novo mês
@@ -2679,7 +2716,7 @@ export default function App() {
         key:requestedKey,
       };
       if(cancelled||requestId!==monthLoadRequest.current) return;
-      hydratingMonth.current=true;
+      hydratingMonth.current=!repairedCopy;
       setMonthRaw(migrated);
     });
     setView("dashboard");
@@ -2707,6 +2744,9 @@ export default function App() {
           else {
             try { source=JSON.parse(localStorage.getItem(`month:${key}`))||seedMonth(key); }
             catch { source=seedMonth(key); }
+            let previous=null;
+            try { previous=JSON.parse(localStorage.getItem(`month:${prevMesKey(key)}`)); } catch {}
+            source=repairCopiedMonth(source,previous,key);
             source=migrateMonth(source,key);
           }
           const last=Date.parse(source?.agendaSincronizacao?.em||"");
