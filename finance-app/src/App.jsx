@@ -1460,14 +1460,15 @@ Retorne SOMENTE o array JSON.`;
   );
 }
 
-const TIPOS_INVEST = ["Renda Fixa","Fundo","Ações","FIIs","Cripto","Previdência","Internacional","Outro"];
+const TIPOS_INVEST = ["Conta","Renda Fixa","Fundo","Ações","FIIs","Cripto","Previdência","Internacional","Outro"];
 const CORES_TIPO = {
-  "Renda Fixa":"#15803d","Fundo":"#4f46e5","Ações":"#c2410c","FIIs":"#b45309",
+  "Conta":"#64748b","Renda Fixa":"#15803d","Fundo":"#4f46e5","Ações":"#c2410c","FIIs":"#b45309",
   "Cripto":"#e879f9","Previdência":"#0e7490","Internacional":"#38bdf8","Outro":"#94a3b8",
 };
 // Risco estimado por tipo de ativo (1=baixo risco, 5=muito alto) — heurística simples,
 // não é uma análise de risco profissional, só uma referência dentro do app.
 const RISCO_TIPO = {
+  "Conta":        {score:1, label:"Baixo",      color:"#15803d"},
   "Renda Fixa":   {score:1, label:"Baixo",      color:"#15803d"},
   "Previdência":  {score:1, label:"Baixo",      color:"#15803d"},
   "FIIs":         {score:3, label:"Médio",      color:"#b45309"},
@@ -1542,10 +1543,8 @@ function InvestView({month,setMonth,mesKey}) {
   const prevMonth=allMonths[prevKey];
   const prevFotoConfirmada=hasFotoInvestimentos(prevMonth);
   const prevTotal=(prevMonth?.investimentos||[]).reduce((s,i)=>s+Number(i.atual||0),0);
-  const prevAportes=(prevMonth?.investimentos||[]).reduce((s,i)=>s+Number(i.aporte||0),0);
-  const prevResgates=(prevMonth?.investimentos||[]).reduce((s,i)=>s+Number(i.resgate||0),0);
   const fotoConfirmada=hasFotoInvestimentos(month);
-  const rend=fotoConfirmada&&prevFotoConfirmada?totalAtu-prevTotal-prevAportes+prevResgates:null;
+  const rend=fotoConfirmada&&prevFotoConfirmada?totalAtu-prevTotal-totalAportes+totalResgates:null;
   const rendPct=rend!==null&&prevTotal>0?(rend/prevTotal*100):null;
   const [prevY,prevM]=prevKey.split("-");
   const periodoRendimento=`${MESES[Number(prevM)-1]}/${prevY}`;
