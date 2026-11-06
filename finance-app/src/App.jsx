@@ -83,6 +83,9 @@ const makeLocalConfig = (nome, extra={}) => ({
   desdeMes:extra.desdeMes||"",
   ateMes:extra.ateMes||"",
   empresa:extra.empresa||"",
+  calculo:extra.calculo||"hora",
+  valor6hSemana:Number(extra.valor6hSemana)||0,
+  valor12h:Number(extra.valor12h)||0,
   ativo:extra.ativo!==false,
 });
 const LOCAIS_DEFAULT_CONFIG = [
@@ -90,12 +93,15 @@ const LOCAIS_DEFAULT_CONFIG = [
   makeLocalConfig("Leonor · nova empresa",{id:"leonor-nova",empresa:"Nova empresa",busca:"Leonor",diaReceb:20,inicioMes:-1,fimMes:-1,desdeMes:"2026-11"}),
   makeLocalConfig("CDT",{id:"cdt"}),
   makeLocalConfig("SEPACO",{id:"sepaco"}),
+  makeLocalConfig("MBOI",{id:"mboi",valorH:141.66,diaReceb:25,inicioMes:-1,fimMes:-1}),
+  makeLocalConfig("Le Forte Morumbi",{id:"le-forte-morumbi",busca:"Le Forte Morumbi",diaReceb:20,inicioMes:-1,fimMes:-1,desdeMes:"2026-12",calculo:"plantao-faixa",valor6hSemana:1000,valor12h:1640}),
 ];
 let LOCAIS_CONFIG=LOCAIS_DEFAULT_CONFIG.map(l=>({...l}));
 const AGENDA_URL = "https://script.google.com/macros/s/AKfycbxDfXcA9Fs8KUM8yEU0cVkZXdlIQFfs0n0Q9J5NMtCtTf0u_z5mcp-nIyMM_9aSYe1txA/exec";
 const MESES  = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
 const fmtBRL = v => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(v||0);
+const valorPlantao = p => p?.valorCalculado!=null ? Number(p.valorCalculado)||0 : (Number(p?.horas)||0)*(Number(p?.valorH)||0);
 const valorPessoal = lancamento => {
   const informado=lancamento?.percentualPessoal;
   const percentual=informado==null?100:Number(informado);
@@ -222,7 +228,7 @@ const mergePlantoesConfig = (plantoes,monthKey) => {
 
 const agendaRequestConfig = (locaisConfig,monthKey) => locaisConfig
   .filter(l=>localAtivoNoMes(l,monthKey))
-  .map(({nome,busca,inicioDia,inicioMes,fimDia,fimMes})=>({nome,busca,inicioDia,inicioMes,fimDia,fimMes}));
+  .map(({nome,busca,inicioDia,inicioMes,fimDia,fimMes,calculo,valor6hSemana,valor12h})=>({nome,busca,inicioDia,inicioMes,fimDia,fimMes,calculo,valor6hSemana,valor12h}));
 
 const syncAgendaMonth = async (monthData, monthKey, locaisConfig) => {
   const config=agendaRequestConfig(locaisConfig,monthKey);
@@ -238,7 +244,8 @@ const syncAgendaMonth = async (monthData, monthKey, locaisConfig) => {
     const d=plantoesApi[p.local];
     if(!d||p.bloqueadoSync) return p;
     const cfg=locaisConfig.find(l=>l.nome===p.local);
-    return {...p,n:Number(d.n)||0,horas:Number(d.horas)||0,valorH:Number(p.valorH||cfg?.valorH)||0,diaReceb:Number(p.diaReceb||cfg?.diaReceb)||0,fromAgenda:true,editadoManualmente:false};
+    return {...p,n:Number(d.n)||0,horas:Number(d.horas)||0,valorH:Number(p.valorH||cfg?.valorH)||0,diaReceb:Number(p.diaReceb||cfg?.diaReceb)||0,fromAgenda:true,editadoManualmente:false,
+      ...(d.valor!=null?{valorCalculado:Number(d.valor)||0,qtd6hSemana:Number(d.qtd6hSemana)||0,qtd12h:Number(d.qtd12h)||0,eventosNaoClassificados:Number(d.eventosNaoClassificados)||0}:{})};
   });
   return {
     data,
@@ -326,7 +333,7 @@ function MonthNav({mesKey,setMesKey}) {
 }
 
 function Dashboard({month,setView}) {
-  const plantaoT=month.plantoes.filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0);
+  const plantaoT=month.plantoes.filter(p=>p.ativo!==false).reduce((s,p)=>s+valorPlantao(p),0);
   const recT=plantaoT+totalReceitasFixas(month)+(month.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
   const fixT=month.fixas.reduce((s,f)=>s+valorPessoal(f),0);
   const carT=Object.values(month.cartoes).flat().reduce((s,t)=>s+valorPessoal(t),0);
@@ -463,7 +470,7 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
   const [novoLocal,setNovoLocal]=useState({nome:"",valorH:"",diaReceb:""});
   const mesEncerrado=mesKey<curMes();
 
-  const plantaoT=(month.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0);
+  const plantaoT=(month.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+valorPlantao(p),0);
   const receitasFixas=getReceitasFixas(month).filter(r=>r.ativo!==false);
   const receitasFixasT=receitasFixas.reduce((s,r)=>s+Number(r.valor||0),0);
   const extrasT=(month.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
@@ -471,7 +478,7 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
 
   const updPlantao=(i,f,v)=>{
     const p=[...month.plantoes];
-    const editManual = ["n","horas"].includes(f) ? {editadoManualmente:true} : {};
+    const editManual = ["n","horas"].includes(f) ? {editadoManualmente:true,valorCalculado:null,qtd6hSemana:0,qtd12h:0,eventosNaoClassificados:0} : {};
     p[i]={...p[i],[f]:["n","horas","valorH"].includes(f)?Number(v)||0:v,...editManual};
     setMonth({...month,plantoes:p});
   };
@@ -678,10 +685,10 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
                   </div>
                   <StatusBadge value={p.statusReceb||"aguardando"} onChange={v=>updPlantao(i,"statusReceb",v)}/>
                 </div>
-                {p.horas>0&&p.valorH>0&&(
+                {valorPlantao(p)>0&&(
                   <div style={{marginTop:8,padding:"7px 10px",background:"rgba(74,222,128,.07)",borderRadius:8,display:"flex",justifyContent:"space-between"}}>
-                    <span style={{fontSize:12,color:"#64748b"}}>{p.horas}h × {fmtBRL(p.valorH)}</span>
-                    <span className="mono" style={{fontSize:13,color:"#15803d",fontWeight:600}}>{fmtBRL(p.horas*p.valorH)}</span>
+                    <span style={{fontSize:12,color:"#64748b"}}>{p.valorCalculado!=null?`${p.qtd6hSemana||0} curto(s) · ${p.qtd12h||0} de 12h`: `${p.horas}h × ${fmtBRL(p.valorH)}`}</span>
+                    <span className="mono" style={{fontSize:13,color:"#15803d",fontWeight:600}}>{fmtBRL(valorPlantao(p))}</span>
                   </div>
                 )}
               </>
@@ -1858,7 +1865,7 @@ function AnáliseView({month, mesKey, setMonth}) {
   const fixT  = (month.fixas||[]).reduce((s,f)=>s+valorPessoal(f),0);
   const carT  = Object.values(month.cartoes||{}).flat().reduce((s,t)=>s+valorPessoal(t),0);
   const varT  = (month.variaveis||[]).reduce((s,p)=>s+valorPessoal(p),0);
-  const recT  = (month.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0)
+  const recT  = (month.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+valorPlantao(p),0)
               + totalReceitasFixas(month)
               + (month.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
   const totalDesp = fixT+carT+varT;
@@ -1879,7 +1886,7 @@ function AnáliseView({month, mesKey, setMonth}) {
   });
   const getRecT = md => {
     if(!md) return 0;
-    return (md.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+(p.horas*p.valorH),0)
+    return (md.plantoes||[]).filter(p=>p.ativo!==false).reduce((s,p)=>s+valorPlantao(p),0)
       + totalReceitasFixas(md)
       + (md.receitasExtra||[]).reduce((s,r)=>s+Number(r.valor||0),0);
   };
@@ -2409,7 +2416,7 @@ function ConfigView({cats,setCats,locaisConfig,setLocaisConfig,fixasConfig,setFi
     save("config:cats",updated);
     setEditIdx(null);
   };
-  const updateLocal=(id,campo,valor)=>setLocaisConfig(locaisConfig.map(l=>l.id===id?{...l,[campo]:["valorH","diaReceb","inicioDia","inicioMes","fimDia","fimMes"].includes(campo)?Number(valor)||0:valor}:l));
+  const updateLocal=(id,campo,valor)=>setLocaisConfig(locaisConfig.map(l=>l.id===id?{...l,[campo]:["valorH","diaReceb","inicioDia","inicioMes","fimDia","fimMes","valor6hSemana","valor12h"].includes(campo)?Number(valor)||0:valor}:l));
   const addAgendaLocal=()=>{
     if(!novoLocal?.nome?.trim()) return;
     setLocaisConfig([...locaisConfig,makeLocalConfig(novoLocal.nome.trim(),novoLocal)]);
@@ -2510,6 +2517,10 @@ function ConfigView({cats,setCats,locaisConfig,setLocaisConfig,fixasConfig,setFi
                 <Inp label="Valor/h (R$)" type="number" value={l.valorH||""} onChange={v=>updateLocal(l.id,"valorH",v)} placeholder="0"/>
                 <Inp label="Dia receb." type="number" value={l.diaReceb||""} onChange={v=>updateLocal(l.id,"diaReceb",v)} placeholder="0"/>
               </div>
+              {l.calculo==="plantao-faixa"&&<div style={{marginTop:8,padding:9,borderRadius:9,background:"rgba(21,128,61,.05)",border:"1px solid rgba(21,128,61,.12)"}}>
+                <div style={{fontSize:10,color:"#15803d",fontWeight:600,marginBottom:7}}>Valor por tipo de plantão</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><Inp label="7h–13h · seg–sex" type="number" value={l.valor6hSemana||""} onChange={v=>updateLocal(l.id,"valor6hSemana",v)}/><Inp label="Plantão de 12h" type="number" value={l.valor12h||""} onChange={v=>updateLocal(l.id,"valor12h",v)}/></div>
+              </div>}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
                 <Inp label="Válido desde" type="month" value={l.desdeMes||""} onChange={v=>updateLocal(l.id,"desdeMes",v)}/>
                 <Inp label="Válido até" type="month" value={l.ateMes||""} onChange={v=>updateLocal(l.id,"ateMes",v)}/>

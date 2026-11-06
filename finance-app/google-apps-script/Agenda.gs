@@ -1,6 +1,6 @@
 /**
  * Web app do Google Apps Script para resumir plantões do Google Agenda.
- * Recebe ?mes=YYYY-MM&config=[{nome,busca,inicioDia,inicioMes,fimDia,fimMes}]
+ * Recebe ?mes=YYYY-MM&config=[{nome,busca,inicioDia,inicioMes,fimDia,fimMes,calculo,valor6hSemana,valor12h}]
  */
 function doGet(e) {
   var mes = (e.parameter.mes || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM")).split("-");
@@ -40,7 +40,31 @@ function doGet(e) {
       return total + Math.max(0, (evento.getEndTime().getTime() - evento.getStartTime().getTime()) / 3600000);
     }, 0);
 
-    plantoes[local.nome] = { n: arredondar(horas / 12), horas: arredondar(horas) };
+    if (local.calculo === "plantao-faixa") {
+      var qtd6hSemana = 0;
+      var qtd12h = 0;
+      var eventosNaoClassificados = 0;
+      eventos.forEach(function(evento) {
+        var inicioEvento = evento.getStartTime();
+        var fimEvento = evento.getEndTime();
+        var duracao = (fimEvento.getTime() - inicioEvento.getTime()) / 3600000;
+        var diaSemana = inicioEvento.getDay();
+        var curtoDiaUtil = diaSemana >= 1 && diaSemana <= 5 && inicioEvento.getHours() === 7 && inicioEvento.getMinutes() === 0 && fimEvento.getHours() === 13 && fimEvento.getMinutes() === 0 && Math.abs(duracao - 6) < 0.1;
+        if (curtoDiaUtil) qtd6hSemana++;
+        else if (Math.abs(duracao - 12) < 0.1) qtd12h++;
+        else eventosNaoClassificados++;
+      });
+      plantoes[local.nome] = {
+        n: eventos.length,
+        horas: arredondar(horas),
+        valor: qtd6hSemana * (Number(local.valor6hSemana) || 0) + qtd12h * (Number(local.valor12h) || 0),
+        qtd6hSemana: qtd6hSemana,
+        qtd12h: qtd12h,
+        eventosNaoClassificados: eventosNaoClassificados
+      };
+    } else {
+      plantoes[local.nome] = { n: arredondar(horas / 12), horas: arredondar(horas) };
+    }
     periodos[local.nome] = { inicio: formatar(inicio), fim: formatar(fimInclusivo) };
   });
 

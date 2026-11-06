@@ -24,6 +24,9 @@ export default async function handler(req, res) {
       inicioMes: Math.min(12, Math.max(-12, Number(local.inicioMes) || 0)),
       fimDia: Math.min(31, Math.max(1, Number(local.fimDia) || 31)),
       fimMes: Math.min(12, Math.max(-12, Number(local.fimMes) || 0)),
+      calculo: local.calculo === "plantao-faixa" ? "plantao-faixa" : "hora",
+      valor6hSemana: Math.max(0, Number(local.valor6hSemana) || 0),
+      valor12h: Math.max(0, Number(local.valor12h) || 0),
     })).filter(local => local.nome && local.busca);
   } catch {
     return res.status(400).json({ error: "Configuração de locais inválida" });
