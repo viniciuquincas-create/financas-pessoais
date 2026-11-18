@@ -2364,15 +2364,20 @@ function ProjetosView({projects,setProjects,month,setMonth,mesKey}) {
     const confirmado=ligados.filter(g=>!g.item.projetado).reduce((s,g)=>s+g.valor,0);
     const previsto=ligados.filter(g=>g.item.projetado).reduce((s,g)=>s+g.valor,0);
     const itens=(p.itens||[]).reduce((s,i)=>s+Number(i.valor||0),0);
-    const orcamento=Math.max(Number(p.valorMeta)||0,itens,confirmado+previsto);
-    const falta=Math.max(orcamento-confirmado-Number(p.valorGuardado||0),0);
+    const meta=Number(p.valorMeta)||0;
+    const reservado=Number(p.valorGuardado)||0;
+    const totalProjeto=confirmado+previsto;
+    const faltaReserva=meta>0?Math.max(meta-confirmado-previsto-reservado,0):0;
     const alvo=p.dataAlvo?new Date(`${p.dataAlvo}T12:00:00`):null;
-    const mesesAte=alvo&&alvo>new Date()?Math.max(1,Math.ceil((alvo-new Date())/(1000*60*60*24*30.44))):1;
-    return {ligados,confirmado,previsto,itens,orcamento,falta,mesesAte,mensal:falta/mesesAte};
+    const dataPassou=!!alvo&&alvo<new Date();
+    const mesesAte=alvo&&!dataPassou?Math.max(1,Math.ceil((alvo-new Date())/(1000*60*60*24*30.44))):0;
+    return {ligados,confirmado,previsto,itens,meta,reservado,totalProjeto,faltaReserva,dataPassou,mesesAte,mensal:mesesAte?faltaReserva/mesesAte:0};
   };
   const recomendacao=(p,r)=>{
-    if(!p.dataAlvo) return "Defina a data-alvo para calcular o valor mensal e comparar formas de pagamento.";
-    if(r.falta<=0) return "Meta coberta. Prefira pagamento à vista se houver desconto, sem comprometer sua reserva de emergência.";
+    if(!r.meta) return "Defina uma meta total se quiser calcular quanto ainda precisa reservar. Os gastos e as parcelas futuras continuam sendo acompanhados normalmente.";
+    if(r.dataPassou) return r.faltaReserva>0?`A data-alvo já passou e ainda faltam ${fmtBRL(r.faltaReserva)} para cobrir a meta. Atualize a data para recalcular o valor mensal.`:"A data-alvo já passou, mas a meta está coberta pelos valores pagos, reservados e pelas parcelas futuras.";
+    if(!p.dataAlvo) return "Defina a data-alvo para transformar o valor que falta reservar em uma meta mensal.";
+    if(r.faltaReserva<=0) return "Meta coberta pelos gastos confirmados, pelas parcelas futuras e pelo valor já reservado.";
     if(r.mesesAte<=6) return `Prazo curto: reserve cerca de ${fmtBRL(r.mensal)}/mês em produto de baixo risco e liquidez diária. Parcelar só faz sentido sem juros.`;
     if(p.estrategia==="parcelado") return "Compare o CET com o rendimento líquido da reserva. Sem juros, mantenha o dinheiro líquido e pague as parcelas dentro do orçamento mensal.";
     return `Separe aproximadamente ${fmtBRL(r.mensal)}/mês. Para uma meta com data definida, priorize baixo risco; evite renda variável perto do uso do dinheiro.`;
@@ -2399,7 +2404,13 @@ function ProjetosView({projects,setProjects,month,setMonth,mesKey}) {
         <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start"}}><div style={{flex:1}}><input value={projeto.nome} onChange={e=>updateProjeto(projeto.id,{nome:e.target.value})} style={{width:"100%",border:"none",background:"transparent",fontSize:18,fontWeight:700,color:"#172033",outline:"none"}}/><div style={{fontSize:10,color:"#7c8799",marginTop:2}}>{projeto.dataAlvo?`Objetivo em ${new Date(`${projeto.dataAlvo}T12:00:00`).toLocaleDateString("pt-BR")}`:"Sem data definida"}</div></div><button onClick={()=>removeProjeto(projeto.id)} style={{border:"none",background:"rgba(239,68,68,.07)",color:"#dc2626",borderRadius:7,padding:"4px 7px",cursor:"pointer"}}>✕</button></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:12}}><Inp label="Data-alvo" type="date" value={projeto.dataAlvo||""} onChange={v=>updateProjeto(projeto.id,{dataAlvo:v})}/><Inp label="Meta total (R$)" type="number" value={projeto.valorMeta||""} onChange={v=>updateProjeto(projeto.id,{valorMeta:Number(v)||0})} placeholder="Calculada pelos itens"/><Inp label="Valor já reservado" type="number" value={projeto.valorGuardado||""} onChange={v=>updateProjeto(projeto.id,{valorGuardado:Number(v)||0})}/><Sel label="Estratégia" value={projeto.estrategia||"auto"} onChange={v=>updateProjeto(projeto.id,{estrategia:v})} options={[{value:"auto",label:"Recomendada"},{value:"vista",label:"Juntar e pagar à vista"},{value:"parcelado",label:"Parcelar sem juros"},{value:"reserva",label:"Guardar com liquidez"}]}/></div>
       </Card>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{[["Orçamento",r.orcamento,"#5b58d6"],["Gasto confirmado",r.confirmado,"#dc2626"],["Já projetado",r.previsto,"#b45309"],["Guardar por mês",r.mensal,"#15803d"]].map(([l,v,c])=><Card key={l} style={{padding:12}}><div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase"}}>{l}</div><div className="mono" style={{fontSize:16,color:c,fontWeight:700,marginTop:3}}>{fmtBRL(v)}</div></Card>)}</div>
+      {r.dataPassou&&<div style={{padding:"9px 11px",borderRadius:10,background:"rgba(180,83,9,.08)",border:"1px solid rgba(180,83,9,.18)",fontSize:11,color:"#b45309"}}>A data-alvo já passou. Atualize a data para voltar a calcular uma reserva mensal.</div>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{[
+        ["Total do projeto",r.totalProjeto,"#5b58d6","Soma dos gastos confirmados e das parcelas futuras vinculadas."],
+        ["Já pago / confirmado",r.confirmado,"#dc2626","Lançamentos reais do projeto que não estão marcados como previstos."],
+        ["Parcelas futuras",r.previsto,"#b45309","Parcelas previstas que ainda serão cobradas."],
+        ["Falta reservar",r.faltaReserva,"#15803d",r.meta?"Meta menos valores pagos, parcelas futuras e valor já reservado.":"Defina uma meta total para calcular este valor."],
+      ].map(([l,v,c,ajuda])=><Card key={l} style={{padding:12}} title={ajuda}><div style={{fontSize:9,color:"#7c8799",textTransform:"uppercase"}}>{l} <span aria-hidden="true">ⓘ</span></div><div className="mono" style={{fontSize:16,color:c,fontWeight:700,marginTop:3}}>{fmtBRL(v)}</div><div style={{fontSize:9,color:"#94a3b8",lineHeight:1.35,marginTop:4}}>{ajuda}</div>{l==="Falta reservar"&&r.meta>0&&r.mesesAte>0&&r.faltaReserva>0&&<div style={{fontSize:9,color:"#15803d",marginTop:4}}>{fmtBRL(r.mensal)} por mês até a data-alvo</div>}</Card>)}</div>
       <Card style={{borderColor:"rgba(21,128,61,.18)",background:"rgba(21,128,61,.035)"}}><div style={{fontSize:10,color:"#15803d",fontWeight:700,textTransform:"uppercase",letterSpacing:.7}}>Estratégia sugerida</div><div style={{fontSize:12,color:"#475569",lineHeight:1.55,marginTop:6}}>{recomendacao(projeto,r)}</div></Card>
       <Card><div style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:9}}>Itens planejados</div>{(projeto.itens||[]).map(i=><div key={i.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(15,23,42,.04)"}}><span style={{fontSize:12,color:"#475569"}}>{i.nome}</span><div style={{display:"flex",gap:7,alignItems:"center"}}><span className="mono" style={{fontSize:11}}>{fmtBRL(i.valor)}</span><button onClick={()=>updateProjeto(projeto.id,{itens:projeto.itens.filter(x=>x.id!==i.id)})} style={{border:"none",background:"transparent",color:"#dc2626",cursor:"pointer"}}>✕</button></div></div>)}<div style={{display:"grid",gridTemplateColumns:"2fr 1fr auto",gap:6,marginTop:9}}><input value={novoItem.nome} onChange={e=>setNovoItem({...novoItem,nome:e.target.value})} placeholder="Passagem, hospedagem..." style={{minWidth:0,border:"1px solid rgba(15,23,42,.1)",borderRadius:8,padding:"7px 8px",fontSize:11}}/><input type="number" value={novoItem.valor} onChange={e=>setNovoItem({...novoItem,valor:e.target.value})} placeholder="R$" style={{minWidth:0,border:"1px solid rgba(15,23,42,.1)",borderRadius:8,padding:"7px 8px",fontSize:11}}/><button onClick={addItem} style={{border:"none",borderRadius:8,background:"#5b58d6",color:"#fff",padding:"0 10px",cursor:"pointer"}}>+</button></div></Card>
       <Card style={{borderColor:"rgba(91,88,214,.16)"}}>
