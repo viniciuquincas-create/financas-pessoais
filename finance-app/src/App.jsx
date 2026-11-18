@@ -102,6 +102,15 @@ const MESES  = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov
 
 const fmtBRL = v => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(v||0);
 const valorPlantao = p => p?.valorCalculado!=null ? Number(p.valorCalculado)||0 : (Number(p?.horas)||0)*(Number(p?.valorH)||0);
+const ProjetoSelect = ({value,onChange,projects=[]}) => (
+  <select value={value||""} onChange={e=>onChange(e.target.value||null)} aria-label="Projeto relacionado" style={{
+    width:"100%",background:value?"rgba(91,88,214,.07)":"#fff",border:"1px solid rgba(91,88,214,.18)",
+    borderRadius:8,padding:"5px 9px",color:value?"#5b58d6":"#7c8799",fontSize:10,fontWeight:600,outline:"none",cursor:"pointer",
+  }}>
+    <option value="">Sem projeto</option>
+    {projects.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
+  </select>
+);
 const valorPessoal = lancamento => {
   const informado=lancamento?.percentualPessoal;
   const percentual=informado==null?100:Number(informado);
@@ -766,7 +775,7 @@ function PlantoesView({month,setMonth,mesKey,locaisConfig,setLocaisConfig}) {
 }
 
 // FixaCard fora do FixasView para evitar recriação a cada render (causa do bug "edita todas")
-function FixaCard({f, editing, setEditing, onUpd, onRemove, onRemovePermanent}) {
+function FixaCard({f, editing, setEditing, onUpd, onRemove, onRemovePermanent, projects}) {
   const isOpen = editing === f.id;
   return (
     <Card style={{
@@ -782,6 +791,7 @@ function FixaCard({f, editing, setEditing, onUpd, onRemove, onRemovePermanent}) 
             <DivisaoBadge item={f} onToggle={dividido=>onUpd(f.id,"percentualPessoal",dividido?50:100)}/>
           </div>
           <div style={{fontSize:11,color:"#7c8799",marginTop:1}}>{f.venc&&`${f.venc} · `}{f.cat}{f.duracao&&f.duracao!=="sempre"?` · ${f.duracao==="mes"?"só este mês":f.duracao}`:""}</div>
+          <div style={{marginTop:6,maxWidth:190}}><ProjetoSelect value={f.projetoId} onChange={v=>onUpd(f.id,"projetoId",v)} projects={projects}/></div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
           <span className="mono" style={{fontSize:14,color:f.status==="pago"?"#15803d":"#64748b"}}>
@@ -850,10 +860,10 @@ function FixaCard({f, editing, setEditing, onUpd, onRemove, onRemovePermanent}) 
   );
 }
 
-function FixasView({month,setMonth,setFixasConfig}) {
+function FixasView({month,setMonth,setFixasConfig,projects}) {
   const [editing,setEditing]=useState(null);
   const [showAdd,setShowAdd]=useState(false);
-  const [nova,setNova]=useState({nome:"",venc:"",cat:CATS[0],valor:"",forma:"",banco:"",dataPgto:""});
+  const [nova,setNova]=useState({nome:"",venc:"",cat:CATS[0],valor:"",forma:"",banco:"",dataPgto:"",projetoId:null});
 
   const upd=(id,field,val)=>setMonth({...month,fixas:month.fixas.map(x=>x.id===id?{...x,[field]:field==="valor"?Number(val)||0:val}:x)});
   const remove=id=>setMonth({...month,fixas:month.fixas.filter(f=>f.id!==id)});
@@ -864,7 +874,7 @@ function FixasView({month,setMonth,setFixasConfig}) {
   const addFixa=()=>{
     if(!nova.nome) return;
     setMonth({...month,fixas:[...month.fixas,{...nova,valor:Number(nova.valor)||0,id:Date.now(),status:"pendente",extra:true}]});
-    setNova({nome:"",venc:"",cat:CATS[0],valor:"",forma:"",banco:"",dataPgto:""});
+    setNova({nome:"",venc:"",cat:CATS[0],valor:"",forma:"",banco:"",dataPgto:"",projetoId:null});
     setShowAdd(false);
   };
 
@@ -894,7 +904,7 @@ function FixasView({month,setMonth,setFixasConfig}) {
               {label}
             </div>
             {items.map(f=>(
-              <FixaCard key={f.id} f={f} editing={editing} setEditing={setEditing} onUpd={upd} onRemove={remove} onRemovePermanent={removePermanent}/>
+              <FixaCard key={f.id} f={f} editing={editing} setEditing={setEditing} onUpd={upd} onRemove={remove} onRemovePermanent={removePermanent} projects={projects}/>
             ))}
           </div>
         );
@@ -910,6 +920,7 @@ function FixasView({month,setMonth,setFixasConfig}) {
               <Sel label="Categoria" value={nova.cat} onChange={v=>setNova({...nova,cat:v})} options={CATS}/>
             </div>
             <Inp label="Valor (R$)" type="number" value={nova.valor} onChange={v=>setNova({...nova,valor:v})} placeholder="0,00"/>
+            <ProjetoSelect value={nova.projetoId} onChange={v=>setNova({...nova,projetoId:v})} projects={projects}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
               <Btn outline color="#64748b" onClick={()=>setShowAdd(false)}>Cancelar</Btn>
               <Btn color="#b45309" onClick={addFixa} style={{color:"#eef3f8"}}>Adicionar</Btn>
@@ -926,7 +937,7 @@ function FixasView({month,setMonth,setFixasConfig}) {
   );
 }
 
-function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthInstallments}) {
+function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthInstallments, projects}) {
   const [activeCard,setActiveCard]=useState("inter");
   const [showForm,setShowForm]=useState(false);
   const [showImport,setShowImport]=useState(false);
@@ -943,7 +954,7 @@ function CartoesView({month, setMonth, mesKey, importCardEntries, projectMonthIn
 
   // Limpa erros ao montar o componente
   useEffect(()=>{ setImportMsg(null); setPdfFile(null); setPdfPreview([]); },[]);
-  const [form,setForm]=useState({desc:"",cat:CATS[0],parcela:"",valor:""});
+  const [form,setForm]=useState({desc:"",cat:CATS[0],parcela:"",valor:"",projetoId:null});
   const card=CARDS.find(c=>c.id===activeCard);
   const items=month.cartoes[activeCard]||[];
   const total=items.reduce((s,t)=>s+Number(t.valor||0),0);
@@ -1041,7 +1052,7 @@ Retorne SOMENTE o array JSON.`;
   const add=()=>{
     if(!form.desc||!form.valor) return;
     importCardEntries(activeCard,[{...form,valor:Number(form.valor)}]);
-    setForm({desc:"",cat:CATS[0],parcela:"",valor:""});
+    setForm({desc:"",cat:CATS[0],parcela:"",valor:"",projetoId:null});
     setShowForm(false);
   };
   const remove=id=>setMonth({...month,cartoes:{...month.cartoes,[activeCard]:items.filter(t=>t.id!==id)}});
@@ -1250,7 +1261,7 @@ Retorne SOMENTE o array JSON.`;
             </div>
           </div>
           {/* Linha 2: categoria editável */}
-          <div style={{marginTop:8}}>
+          <div style={{marginTop:8,display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
             <select value={t.cat||"Outro"} onChange={e=>{
               const updated=(month.cartoes[activeCard]||[]).map(x=>x.id===t.id?{...x,cat:e.target.value}:x);
               setMonth({...month,cartoes:{...month.cartoes,[activeCard]:updated}});
@@ -1261,6 +1272,10 @@ Retorne SOMENTE o array JSON.`;
             }}>
               {CATS.map(cat=><option key={cat} value={cat}>{cat}</option>)}
             </select>
+            <ProjetoSelect value={t.projetoId} onChange={v=>{
+              const updated=(month.cartoes[activeCard]||[]).map(x=>x.id===t.id?{...x,projetoId:v}:x);
+              setMonth({...month,cartoes:{...month.cartoes,[activeCard]:updated}});
+            }} projects={projects}/>
           </div>
           </>)}
         </Card>
@@ -1275,6 +1290,7 @@ Retorne SOMENTE o array JSON.`;
               <Inp label="Parcela" value={form.parcela} onChange={v=>setForm({...form,parcela:v})} placeholder="Ex: 2/6"/>
             </div>
             <Inp label="Valor (R$)" type="number" value={form.valor} onChange={v=>setForm({...form,valor:v})} placeholder="0,00"/>
+            <ProjetoSelect value={form.projetoId} onChange={v=>setForm({...form,projetoId:v})} projects={projects}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
               <Btn outline color="#64748b" onClick={()=>setShowForm(false)}>Cancelar</Btn>
               <Btn color={card.color} onClick={add}>Salvar</Btn>
@@ -1290,9 +1306,9 @@ Retorne SOMENTE o array JSON.`;
   );
 }
 
-function PixView({month,setMonth}) {
+function PixView({month,setMonth,projects}) {
   const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({desc:"",cat:CATS[0],data:today(),banco:"Inter",valor:""});
+  const [form,setForm]=useState({desc:"",cat:CATS[0],data:today(),banco:"Inter",valor:"",projetoId:null});
   const [editingEntry,setEditingEntry]=useState(null);
   const [editEntry,setEditEntry]=useState(null);
   const total=(month.variaveis||[]).reduce((s,p)=>s+valorPessoal(p),0);
@@ -1387,7 +1403,7 @@ Retorne SOMENTE o array JSON.`;
   const add=()=>{
     if(!form.desc||!form.valor) return;
     setMonth({...month,variaveis:[...(month.variaveis||[]),{...form,valor:Number(form.valor),id:Date.now()}]});
-    setForm({desc:"",cat:CATS[0],data:today(),banco:"Inter",valor:""});
+    setForm({desc:"",cat:CATS[0],data:today(),banco:"Inter",valor:"",projetoId:null});
     setShowForm(false);
   };
   const startEditingEntry=(p,index)=>{setEditingEntry(index);setEditEntry({...p,valor:String(p.valor??"")});};
@@ -1430,6 +1446,7 @@ Retorne SOMENTE o array JSON.`;
                 <DivisaoBadge item={p} onToggle={dividido=>setMonth({...month,variaveis:(month.variaveis||[]).map(x=>x.id===p.id?{...x,percentualPessoal:dividido?50:100,divididoCom:dividido?"Francisco":null}:x)})}/>
                 {Number(p.percentualPessoal)===50&&<span style={{fontSize:9,color:"#15803d"}}>sua parte {fmtBRL(valorPessoal(p))}</span>}
               </div>
+              <div style={{marginTop:6,maxWidth:190}}><ProjetoSelect value={p.projetoId} onChange={v=>setMonth({...month,variaveis:(month.variaveis||[]).map(x=>x.id===p.id?{...x,projetoId:v}:x)})} projects={projects}/></div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:8,flexShrink:0}}>
               <span className="mono" style={{fontSize:14,color:"#0e7490",fontWeight:500}}>{fmtBRL(p.valor)}</span>
@@ -1453,6 +1470,7 @@ Retorne SOMENTE o array JSON.`;
               <Inp label="Data" type="date" value={form.data} onChange={v=>setForm({...form,data:v})}/>
               <Inp label="Valor (R$)" type="number" value={form.valor} onChange={v=>setForm({...form,valor:v})} placeholder="0,00"/>
             </div>
+            <ProjetoSelect value={form.projetoId} onChange={v=>setForm({...form,projetoId:v})} projects={projects}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
               <Btn outline color="#64748b" onClick={()=>setShowForm(false)}>Cancelar</Btn>
               <Btn color="#0e7490" onClick={add} style={{color:"#eef3f8"}}>Salvar</Btn>
@@ -3050,9 +3068,9 @@ export default function App() {
           {!month?<div style={{textAlign:"center",padding:"60px 0",color:"#cbd5e1"}}>Carregando…</div>
             :view==="dashboard"?<Dashboard month={month} setView={setView}/>
             :view==="plantoes"?<PlantoesView month={month} setMonth={setMonthRaw} mesKey={mesKey} locaisConfig={locaisConfig} setLocaisConfig={setLocaisConfig}/>
-            :view==="fixas"?<FixasView month={month} setMonth={setMonthRaw} setFixasConfig={setFixasConfig}/>
-            :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw} mesKey={mesKey} importCardEntries={importCardEntries} projectMonthInstallments={projectMonthInstallments}/>
-            :view==="variaveis"?<PixView month={month} setMonth={setMonthRaw}/>
+            :view==="fixas"?<FixasView month={month} setMonth={setMonthRaw} setFixasConfig={setFixasConfig} projects={projects}/>
+            :view==="cartoes"?<CartoesView month={month} setMonth={setMonthRaw} mesKey={mesKey} importCardEntries={importCardEntries} projectMonthInstallments={projectMonthInstallments} projects={projects}/>
+            :view==="variaveis"?<PixView month={month} setMonth={setMonthRaw} projects={projects}/>
             :view==="projetos"?<ProjetosView projects={projects} setProjects={setProjects} month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="investimentos"?<InvestView month={month} setMonth={setMonthRaw} mesKey={mesKey}/>
             :view==="analise"?<AnáliseView month={month} mesKey={mesKey} setMonth={setMonthRaw}/>
